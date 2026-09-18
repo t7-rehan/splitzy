@@ -1,12 +1,14 @@
 import React, { useState } from "react";
 import { Eye, EyeOff, ArrowRight, Coins, Lock, Mail } from "lucide-react";
 import { ClayButton } from "../common/ClayButton";
+import { signInWithGoogle, mapAuthError } from "../../services/authService";
 
 export function AuthScreen({ onAuthenticate, theme }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   const handleSignIn = (e) => {
     e.preventDefault();
@@ -28,12 +30,27 @@ export function AuthScreen({ onAuthenticate, theme }) {
     });
   };
 
-  const handleGoogleSignIn = () => {
-    onAuthenticate({
-      email: email.trim() || "user@gmail.com",
-      authType: "google",
-      nameFromGoogle: "Sarthak Salvi",
-    });
+  /** Real Firebase Google sign-in. The existing session flow (onAuthenticate)
+   *  and the visual design are unchanged — only the identity source is real. */
+  const handleGoogleSignIn = async () => {
+    if (isSigningIn) return;
+    setError("");
+    setIsSigningIn(true);
+    try {
+      const user = await signInWithGoogle();
+      if (user && !user.redirecting) {
+        onAuthenticate({
+          email: user.email,
+          authType: "google",
+          nameFromGoogle: user.displayName,
+        });
+      }
+      // user.redirecting: the browser is navigating to Google — nothing to do.
+    } catch (err) {
+      setError(mapAuthError(err));
+    } finally {
+      setIsSigningIn(false);
+    }
   };
 
   return (
@@ -180,6 +197,7 @@ export function AuthScreen({ onAuthenticate, theme }) {
         <button
           type="button"
           onClick={handleGoogleSignIn}
+          disabled={isSigningIn}
           style={{
             width: "100%",
             padding: "13px 18px",
@@ -194,9 +212,10 @@ export function AuthScreen({ onAuthenticate, theme }) {
             alignItems: "center",
             justifyContent: "center",
             gap: "10px",
-            cursor: "pointer",
+            cursor: isSigningIn ? "wait" : "pointer",
             transition: "transform 0.12s ease",
             fontFamily: "'Plus Jakarta Sans', sans-serif",
+            opacity: isSigningIn ? 0.7 : 1,
           }}
           className="active:scale-[0.97]"
         >
@@ -207,7 +226,7 @@ export function AuthScreen({ onAuthenticate, theme }) {
             <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
             <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
           </svg>
-          <span>Continue with Google</span>
+          <span>{isSigningIn ? "Opening Google…" : "Continue with Google"}</span>
         </button>
       </div>
     </div>

@@ -1,8 +1,13 @@
+// Auth identity (Firebase-derived). Firebase is authoritative; this mirrors
+// its session for a flicker-free first paint. Deliberately renamed from the
+// pre-Firebase "splitzy_auth_session_v2" key, which stored a simulated login —
+// stale simulated sessions are ignored rather than honored. Splitzy app data
+// (profile/groups/history/theme) keys are unchanged.
 const STORAGE_KEYS = {
   PROFILE: "splitzy_user_profile_v2",
   GROUPS: "splitzy_groups_data_v2",
   SETTLED_HISTORY: "splitzy_settled_txns_v2",
-  AUTH_SESSION: "splitzy_auth_session_v2",
+  AUTH_SESSION: "splitzy_firebase_session_v2",
   THEME: "splitzy_user_theme_v2",
 };
 
@@ -244,6 +249,16 @@ export function clearAuthSession() {
     localStorage.removeItem(STORAGE_KEYS.AUTH_SESSION);
   } catch (e) {
     console.error("Failed to clear auth session", e);
+  }
+}
+
+/** Removes the pre-Firebase simulated session key so stale fake logins
+ *  can never be treated as a real signed-in identity. */
+export function clearLegacyAuthSession() {
+  try {
+    localStorage.removeItem("splitzy_auth_session_v2");
+  } catch (e) {
+    console.error("Failed to clear legacy auth session", e);
   }
 }
 

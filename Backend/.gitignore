@@ -1,0 +1,21 @@
+# Environment (never commit real credentials)
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma local artifacts (migrations are committed once Task 2 starts)
+prisma/*.db
+
+# OS / editor noise
+.DS_Store
+Thumbs.db

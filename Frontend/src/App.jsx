@@ -8,8 +8,15 @@ import {
   loadAuthSession,
   saveAuthSession,
   clearAuthSession,
+  clearLegacyAuthSession,
   loadStoredTheme,
 } from "./services/storage";
+
+// Services — authentication (Firebase identity; backend integration later)
+import {
+  subscribeToAuthState,
+  signOut as firebaseSignOut,
+} from "./services/authService";
 
 // Components
 import { MobileContainer } from "./components/common/MobileContainer";
@@ -36,7 +43,10 @@ import { UPIPaymentModal } from "./components/pro/UPIPaymentModal";
 import { GroupLinkModal } from "./components/pro/GroupLinkModal";
 
 export default function App() {
+  // Firebase identity is authoritative for sign-in; `authSession` (localStorage
+  // mirror) exists only for a flicker-free first paint until Firebase reports.
   const [authSession, setAuthSession] = useState(() => loadAuthSession());
+  const [firebaseReady, setFirebaseReady] = useState(false);
   const [profile, setProfile] = useState(() => loadProfile());
   const [themeMode, setThemeMode] = useState(() => profile?.theme || loadStoredTheme() || "light");
   const [groups, setGroups] = useState(() => loadGroups(profile?.name || "Sarthak", profile?.homeCurrency || "INR"));
@@ -64,6 +74,44 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const theme = getThemeTokens(themeMode);
+
+  // Firebase auth state is the single source of truth for sign-in. The listener
+  // fires once with the current session (so refresh restores login) and again
+  // on every sign-in/sign-out. Until the first Firebase event arrives we keep
+  // showing the mirrored session; null transitions before that are mirror
+  // artifacts, not real sign-outs.
+  useEffect(() => {
+    clearLegacyAuthSession();
+    const unsubscribe = subscribeToAuthState((firebaseUser, error) => {
+      setFirebaseReady(true);
+      if (error) {
+        // Firebase unavailable/unconfigured: fall back to the local mirror.
+        return;
+      }
+      if (firebaseUser) {
+        const sessionData = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          authType: "google",
+          loggedInAt: new Date().toISOString(),
+        };
+        saveAuthSession(sessionData);
+        setAuthSession(sessionData);
+      } else {
+        // Real sign-out — but only drop Firebase-derived sessions; the legacy
+        // local-only flow is untouched until backend integration migrates it.
+        setAuthSession((current) => {
+          if (current?.authType === "google") {
+            clearAuthSession();
+            return null;
+          }
+          return current;
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
 
   // Save profile changes to localStorage
   useEffect(() => {
@@ -134,7 +182,10 @@ export default function App() {
     showToast({ message: "Profile updated successfully", type: "success" });
   };
 
-  const handleLogout = () => {
+  // Signs out of Firebase (safe no-op if Firebase is unavailable) and clears
+  // the local mirror session. Splitzy app data (profile/groups) is preserved.
+  const handleLogout = async () => {
+    await firebaseSignOut();
     clearAuthSession();
     setAuthSession(null);
     setAuthStage("login");
@@ -226,7 +277,8 @@ export default function App() {
     setShowProUpgrade(true);
   };
 
-  const handleResetData = () => {
+  const handleResetData = async () => {
+    await firebaseSignOut();
     localStorage.clear();
     setProfile(null);
     setAuthSession(null);
@@ -239,6 +291,18 @@ export default function App() {
   const selectedGroup = groups.find((g) => g.id === selectedGroupId);
 
   // 1. If not authenticated: Show Landing Animation or Auth Screen
+  // Hold on the shell until Firebase's first auth-state report arrives, so a
+  // refreshing Google user goes straight into the app instead of the login.
+  if (!authSession && !firebaseReady) {
+    return (
+      <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
+        <MobileContainer>
+          <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
+        </MobileContainer>
+      </ThemeProvider>
+    );
+  }
+
   if (!authSession) {
     return (
       <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
