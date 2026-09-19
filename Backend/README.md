@@ -4,13 +4,12 @@ The Splitzy API server: a Node.js + TypeScript + Express service that will
 eventually power authentication, groups, expenses, settlements and more for
 the Splitzy frontend.
 
-**Current status: Task 4 — Backend user identity foundation.** The backend
-foundation (Task 1), the relational database schema (Task 2), and the
-authentication identity layer (Task 4): Firebase-token verification behind a
-clean seam, a development-only auth path, first-login user provisioning and
-the protected `GET /api/v1/auth/me` endpoint. Business features (groups,
-expenses, settlements, recurring) and frontend↔backend integration are
-intentionally **not** implemented yet (see [Task 4 Status](#task-4-status)).
+**Current status: Task 5 — Groups API.** The backend foundation (Task 1), the
+relational database schema (Task 2), the authentication identity layer
+(Task 4), and the first business feature: a secure, tested Groups API with
+membership and role management. Expenses, settlements, recurring expenses and
+frontend↔backend integration are intentionally **not** implemented yet (see
+[Task 5 Status](#task-5-status)).
 
 ## Technology stack
 
@@ -38,21 +37,26 @@ Backend/
 │   │   ├── requestLogger.ts     # Method/path/status/duration logging
 │   │   ├── notFound.ts          # 404 JSON envelope
 │   │   ├── errorHandler.ts      # Centralized error handling
-│   │   └── auth.ts              # requireAuth: Bearer + dev-only header path
+│   │   ├── auth.ts              # requireAuth: Bearer + dev-only header path
+│   │   └── groupAuthorization.ts# requireActor / loadGroupMembership / requireRole
 │   ├── routes/
 │   │   ├── index.ts             # /api/v1 route registry
 │   │   ├── health.routes.ts     # Health routes
-│   │   └── auth.routes.ts       # /api/v1/auth routes (requireAuth)
+│   │   ├── auth.routes.ts       # /api/v1/auth routes (requireAuth)
+│   │   └── groups.routes.ts     # /api/v1/groups routes (role policy)
 │   ├── controllers/
 │   │   ├── health.controller.ts # Request handlers
-│   │   └── auth.controller.ts   # GET /auth/me (never sees token internals)
+│   │   ├── auth.controller.ts   # GET /auth/me (never sees token internals)
+│   │   └── groups.controller.ts # Thin Groups API handlers
 │   ├── services/
 │   │   ├── db.ts                # Shared lazy Prisma client singleton
 │   │   ├── authService.ts       # THE only module that verifies tokens
-│   │   └── currentUserService.ts# Firebase UID → PostgreSQL User (+provisioning)
+│   │   ├── currentUserService.ts# Firebase UID → PostgreSQL User (+provisioning)
+│   │   └── groups.service.ts    # Groups business rules + repository seam
 │   ├── types/
 │   │   ├── api.ts               # API response envelope types
-│   │   └── auth.ts              # VerifiedIdentity / PublicUser contracts
+│   │   ├── auth.ts              # VerifiedIdentity / PublicUser contracts
+│   │   └── groups.ts            # Groups DTOs + request augmentation
 │   ├── utils/
 │   │   └── appError.ts          # AppError class + error code registry
 │   ├── app.ts                   # Express app factory (no port binding)
@@ -63,7 +67,8 @@ Backend/
 ├── tests/
 │   ├── health.test.ts           # Health / 404 / CORS / malformed JSON tests
 │   ├── schema.test.ts           # Schema shape checks (no DB required)
-│   └── auth.test.ts             # Auth middleware/service/endpoint (no Firebase, no DB)
+│   ├── auth.test.ts             # Auth middleware/service/endpoint (no Firebase, no DB)
+│   └── groups.test.ts           # Groups API: 38 scenarios (no Firebase, no DB)
 ├── .env.example                 # Environment template (copy to .env)
 ├── package.json
 ├── tsconfig.json
@@ -137,6 +142,49 @@ Runs the compiled `dist/server.js`.
 | `npm test` | Run the test suite (Node built-in runner) |
 | `npm run prisma:validate` | Validate `prisma/schema.prisma` |
 | `npm run prisma:generate` | (Re)generate the Prisma Client |
+| `npm run db:start` / `db:stop` / `db:status` | Manage the local portable PostgreSQL (Task 7) |
+| `npm run db:migrate` | Deploy pending migrations to `DATABASE_URL` |
+| `npm run db:verify` | Read-only schema verification against the real database |
+| `npm run db:smoke` | End-to-end API smoke test against the real database |
+
+### Local PostgreSQL development (Task 7)
+
+The backend runs against a **real PostgreSQL** instance locally. Two options:
+
+**Option 1 — bundled portable PostgreSQL (default, zero install).**
+Official PostgreSQL 16.4 binaries live in `Backend/.postgres-local/`
+(git-ignored; downloaded once from the official binary distribution used by
+embedded-postgres). The cluster was initialized with a dedicated `splitzy`
+superuser and a random password written straight into the git-ignored `Backend/.env`
+— no credentials exist anywhere else.
+
+```bash
+npm run db:start      # start on 127.0.0.1:54329 (loopback only)
+npm run db:status
+npm run db:stop
+```
+
+Data persists in `.postgres-local/data`. Deleting that folder deletes the local
+dev database (recreate by re-initializing and running `npm run db:migrate`).
+
+**Option 2 — any existing PostgreSQL.** Point `DATABASE_URL` in `Backend/.env`
+at your instance (use a dedicated database), then continue below. The
+`.postgres-local` folder is optional and safe to delete.
+
+Then, in both cases:
+
+```bash
+npm run db:migrate    # npx prisma migrate deploy — applies pending migrations
+npx prisma migrate status
+npm run db:verify     # read-only pg_catalog checks: tables/enums/FKs/uniques/money
+npm run db:smoke      # full API smoke test against the real database (self-cleaning)
+```
+
+`db:smoke` boots the real app, exercises groups → memberships → expenses over
+HTTP via the development-authentication path, asserts database state directly,
+and deletes only the records it created (namespaced `dev-user-task7-*` and
+`Task 7 ...`). No Firebase/Firebase Admin credentials are needed or used
+locally — production Firebase configuration is a separate deployment task.
 
 ## Health endpoint
 
@@ -331,6 +379,38 @@ Response — HTTP 200:
 Unauthenticated requests receive `401 { "error": { "code": "UNAUTHORIZED" } }`.
 The response never contains tokens, credentials or internal auth config.
 
+## Groups API (Task 5)
+
+All routes require authentication (Firebase ID token in production,
+`x-dev-user-id` in development). Authorization chain:
+
+```
+verified identity (req.auth)
+  -> requireActor          find-or-provision PostgreSQL User  -> req.actor
+  -> loadGroupMembership   GroupMember for :groupId           -> req.groupMembership
+  -> requireRole(...)      GroupRole gate                     -> 403 if insufficient
+```
+
+Non-members and nonexistent groups receive the **same generic 404** — group
+existence is never leaked to outsiders.
+
+| Method & path | Role policy | Notes |
+| :--- | :--- | :--- |
+| `POST /api/v1/groups` | any authenticated user | Creator becomes `OWNER`; group + owner membership created in one transaction; 201 |
+| `GET /api/v1/groups` | any authenticated user | Only groups the user has a membership row in; includes `viewerRole` + `memberCount` |
+| `GET /api/v1/groups/:groupId` | any member | Full details incl. safe member list (no emails) |
+| `PATCH /api/v1/groups/:groupId` | `OWNER`, `ADMIN` | Whitelisted fields only: `name`, `description`, `currencyCode`, `isRoommateGroup` |
+| `POST /api/v1/groups/:groupId/leave` | any member | `OWNER` cannot leave (409) until ownership transfer exists; membership row only — group and financial records untouched |
+| `POST /api/v1/groups/:groupId/members` | `OWNER`, `ADMIN` | Adds an existing internal user id as `MEMBER`; duplicate → 409; unknown user → 404 |
+| `DELETE /api/v1/groups/:groupId/members/:userId` | `OWNER`, `ADMIN` | Owner can never be removed (409); an admin cannot remove another admin (403); deletes only the membership |
+| `PATCH /api/v1/groups/:groupId/members/:userId/role` | `OWNER` only | `ADMIN` ⇄ `MEMBER` only; `OWNER` can never be assigned (400) |
+
+Validation rules: name 1–60 chars (required on create), description ≤ 280
+chars (optional), `currencyCode` must be one of INR/USD/EUR/GBP/JPY/AUD
+(normalized to uppercase), `isRoommateGroup` boolean. Unknown/forbidden fields
+(`id`, `ownerId`, `createdBy`, `role`, `createdAt`, ...) are never accepted as
+input — identity and roles always derive from the verified context.
+
 ### Migrations
 
 Migrations live in `prisma/migrations/`:
@@ -346,6 +426,19 @@ npx prisma migrate deploy     # apply existing migrations (CI/production)
 # or, during local development:
 npx prisma migrate dev        # also detects schema drift
 ```
+
+## Task 5 status
+
+**Implemented:** the Groups API (create / list / details / update / leave /
+add-member / remove-member / change-role) with database-backed role
+authorization, generic-404 group isolation, transactional group creation,
+safe member projections (no emails), whitelisted input validation, and 38
+tests (no Firebase or database required).
+
+**Not implemented (future tasks):** ownership transfer, email/link
+invitations, group deletion, expenses/settlements/recurring APIs,
+frontend↔backend integration, payments/UPI, subscriptions, notifications,
+AI/OCR.
 
 ## Task 4 status
 
@@ -369,3 +462,133 @@ When future systems are added, they should reuse the existing foundations:
 envelopes for responses, `requireAuth` + `req.auth` for protected routes, the
 route registry in `src/routes/index.ts`, and the shared Prisma client from
 `src/services/db.ts`.
+
+## Expenses API (Task 6)
+
+All routes are nested under the Groups API (membership is the only way to
+touch an expense) and require authentication. Authorization chain: verified
+identity → PostgreSQL `User` (actor) → `GroupMember` → role / expense-creator
+check. Non-members and unknown groups receive the same generic 404 — expense
+group association can never be probed.
+
+### Routes
+
+| Route | Authorization |
+| :--- | :--- |
+| `POST /api/v1/groups/:groupId/expenses` | any group member; creator = authenticated user |
+| `GET /api/v1/groups/:groupId/expenses` | any group member; own group only, newest `expenseDate` first |
+| `GET /api/v1/groups/:groupId/expenses/:expenseId` | any group member; expense must belong to that group |
+| `PATCH /api/v1/groups/:groupId/expenses/:expenseId` | creator OR group OWNER/ADMIN |
+| `DELETE /api/v1/groups/:groupId/expenses/:expenseId` | creator OR group OWNER/ADMIN |
+
+A plain `MEMBER` who is not the creator receives `403` on update/delete.
+
+### Server-side split validation (never trust the client)
+
+All monetary math is integer BigInt minor units. The server computes and
+persists the split; client-supplied share amounts are never accepted.
+
+- **EQUAL** — server divides `amountMinor` across the participants; the
+  **last listed participant absorbs the rounding remainder**, so the sum is
+  exactly the expense total.
+- **PERCENTAGE** — percentages are **integer basis points** (1 bp = 0.01%,
+  matching the schema's `Decimal(5,2)`); `"3300"` = 33.00%. The map keys are
+  validated against group membership, the total must equal exactly 10 000 bp
+  (99.99%/100.01% are rejected), and the participant with the largest
+  percentage absorbs the rounding remainder.
+- **ITEMIZED** — each item's `amountMinor` divides equally across its
+  participants (last absorbs remainder, mirroring the frontend's `getShares`);
+  item amounts must sum to the expense total exactly; one user MAY appear on
+  several items (duplicates are rejected only within a single item); expense
+  participants are derived from item shares.
+
+For all types: at least one participant, every participant must currently be
+a group member, duplicates rejected, `paidByUserId` must be a member.
+
+### Money, currency, dates
+
+- Amounts: **integer minor units** (`amountMinor`, string at the API edge;
+  ₹100.50 → `"10050"`). Strict parsing: no floats, signs, leading zeros,
+  zero, NaN/Infinity; ceiling 10¹⁵ minor units.
+- Currencies: the same six as the Groups API (`INR USD EUR GBP JPY AUD`),
+  and an expense's currency **must match the group's currency** (frontend
+  always bills in `group.currency`; no conversion exists).
+- `expenseDate` (user-selected, ISO date or date-time, 2000–2100) is distinct
+  from `createdAt`/`updatedAt`, which clients can never set.
+- Categories: the frontend's seven (`Food Travel Rent Utilities Shopping
+  Entertainment Other`, case-insensitive input, stored canonical).
+- Expenses carry **no payment-method field** (the frontend has none; only
+  `Settlement` does).
+
+### Transactional behavior
+
+Create persists `Expense` + `ExpenseParticipant` (+ `ExpenseItem`/
+`ExpenseItemParticipant`) in **one Prisma transaction**. Updates re-validate
+the merged split (client values win, stored values fill gaps — a partial
+split update can never produce an invalid state) and replace derived rows
+wholesale in the same transaction; fields-only patches leave participants and
+items untouched. Delete relies on the schema's CASCADE relations — no other
+group data is affected.
+
+### Testing / PostgreSQL status
+
+63 dedicated scenarios (`tests/expenses.test.ts`) run the real HTTP chain
+(auth → membership → role/creator policy → service) against injected
+in-memory repositories — no Firebase or PostgreSQL needed. Live HTTP checks
+(health, 401 guards on the new routes) run without a database; full
+database-backed persistence remains untested locally because PostgreSQL is
+not available in this environment (schema/migrations from Task 2/4 are
+validated offline only).
+
+## Task 6 status
+
+Implemented: expense CRUD routes, membership-scoped authorization with
+cross-group protection, server-side split validation and computation
+(EQUAL/PERCENTAGE/ITEMIZED, integer minor units, deterministic remainder
+rules), group-currency enforcement, transactional create/update/delete,
+safe serialization (no emails/firebase UIDs/tokens), 63-test suite.
+
+Not implemented (future tasks): frontend API integration, list filtering
+(by participant/category), payment methods on expenses, settlements,
+recurring expenses, invitations, notifications, currency conversion.
+
+## Task 7 status
+
+Implemented: real local PostgreSQL environment (portable official binaries,
+git-ignored, dedicated `splitzy` role + database on 127.0.0.1:54329), migration
+deployment (`20260918120000_init`, `20260919000000_add_firebase_identity`) to
+the real database, idempotency re-check, read-only schema verification
+(`scripts/verify-schema.ts`), and a self-cleaning end-to-end smoke suite
+(`scripts/smoke-postgres.ts` — 79 checks over real HTTP + real PostgreSQL:
+provisioning, groups, memberships, EQUAL/PERCENTAGE/ITEMIZED expenses, updates,
+delete cascades, FK/RESTRICT/rollback behavior, isolation).
+
+Real-database fix found during Task 7: expense create/update re-loaded the row
+through the main Prisma client inside the transaction, which cannot see the
+transaction's uncommitted writes — every transactional expense write would have
+failed against PostgreSQL. The re-load now uses the transaction client
+(`loadOneWith` in `src/services/expenses.service.ts`). The 122-test in-memory
+suite and all builds remain green; frontend untouched.
+
+Not implemented (future tasks): production Firebase deployment/Admin
+credentials, frontend API integration, localStorage migration, settlements,
+recurring scheduler, invitations, payments/UPI, notifications.
+
+## Task 8 status — frontend ↔ backend integration foundation
+
+The React frontend now consumes this API (see `Frontend/README.md`):
+
+- `GET /api/v1/auth/me` — frontend bootstrap resolves the Firebase identity to
+  the PostgreSQL User (backend-authoritative; the client never creates users).
+- `GET/POST /api/v1/groups`, `GET/PATCH /api/v1/groups/:id` — group list,
+  creation and detail are server-backed; the client sends only content fields
+  (creator/OWNER/id/timestamps are server-assigned) and authenticates with the
+  Firebase ID token (`Authorization: Bearer ...`).
+- Identity model: **Firebase = authentication identity; PostgreSQL User =
+  Splitzy application user; PostgreSQL Group = shared server-side group.**
+- Group members stay server-authoritative; the frontend does not yet wire
+  member mutations (its member UI names free-text locals — a later task maps
+  real Splitzy user IDs). Expenses remain frontend-local (Task 8 scope).
+
+No schema or backend-behavior changes were required: 122/122 backend tests,
+`db:verify` (51 checks) and `db:smoke` (79 checks) all green.

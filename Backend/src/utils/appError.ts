@@ -12,6 +12,7 @@ export const ErrorCodes = {
   UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
   UNAUTHORIZED: 'UNAUTHORIZED',
   FORBIDDEN: 'FORBIDDEN',
+  CONFLICT: 'CONFLICT',
   INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
 } as const;
 
@@ -25,6 +26,7 @@ export const statusCodeForError: Record<ErrorCode, number> = {
   UNSUPPORTED_MEDIA_TYPE: 415,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  CONFLICT: 409,
   INTERNAL_SERVER_ERROR: 500,
 };
 
@@ -35,6 +37,7 @@ const genericMessages: Record<ErrorCode, string> = {
   UNSUPPORTED_MEDIA_TYPE: 'Unsupported media type',
   UNAUTHORIZED: 'Authentication required',
   FORBIDDEN: 'Not allowed',
+  CONFLICT: 'Conflict',
   INTERNAL_SERVER_ERROR: 'Internal server error',
 };
 

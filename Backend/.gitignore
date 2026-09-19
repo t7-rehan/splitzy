@@ -13,8 +13,11 @@ dist/
 *.log
 npm-debug.log*
 
-# Prisma local artifacts (migrations are committed once Task 2 starts)
+# Prisma local artifacts
 prisma/*.db
+
+# Portable local PostgreSQL binaries + data (Task 7) — never commit
+.postgres-local/
 
 # OS / editor noise
 .DS_Store

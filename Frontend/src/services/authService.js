@@ -3,12 +3,14 @@
  * Authentication. Components call these functions only; no Firebase SDK details
  * leak into the UI layer.
  *
- * Two identities coexist by design (backend integration comes later):
- *   1. Firebase identity  — real Google account, authoritative here.
- *   2. Splitzy app data   — existing localStorage profile/groups, untouched.
+ * Two identities coexist by design (backend integration — Task 8):
+ *   1. Firebase identity  — real Google account, authoritative for sign-in and
+ *      the ONLY credential source for API calls (ID token -> Bearer header).
+ *   2. Splitzy app data   — existing localStorage profile data, untouched.
  *
  * All Firebase imports are dynamic so the SDK loads only when auth is used.
  */
+import { setApiTokenProvider } from "./apiClient.js";
 
 let googleProvider = null;
 
@@ -106,6 +108,26 @@ export async function getCurrentUser() {
   const auth = await getFirebaseAuth();
   return toAppUser(auth.currentUser);
 }
+
+/**
+ * Firebase ID token for the signed-in user (Task 8). This token — never the
+ * Firebase UID, never a PostgreSQL user id — is the credential the API client
+ * sends as `Authorization: Bearer ...`. `forceRefresh` asks the Firebase SDK
+ * for a freshly minted token (used for the client's single 401 retry).
+ * Returns null when nobody is signed in; throws only if Firebase is broken.
+ */
+export async function getCurrentIdToken({ forceRefresh = false } = {}) {
+  const auth = await getFirebaseAuth();
+  const user = auth.currentUser;
+  if (!user) return null;
+  return user.getIdToken(forceRefresh);
+}
+
+// Bridge: the API client pulls its bearer tokens through this service, so it
+// never touches the Firebase SDK and no second Firebase initialization exists.
+setApiTokenProvider(({ forceRefresh }) =>
+  getCurrentIdToken({ forceRefresh })
+);
 
 /**
  * Subscribes to Firebase auth changes. Fires once with the current state

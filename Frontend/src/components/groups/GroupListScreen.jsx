@@ -6,7 +6,7 @@ import { computeBalances } from "../../services/storage";
 import { ClayCard } from "../common/ClayCard";
 import { ClayButton } from "../common/ClayButton";
 
-export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, theme }) {
+export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, serverSync = "idle", onRetrySync, theme }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // 'all' | 'due' | 'paid'
 
@@ -44,6 +44,61 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
           <Plus size={16} /> New Group
         </ClayButton>
       </div>
+
+      {/* Server sync status (Task 8) — existing visual language, no redesign */}
+      {serverSync === "loading" && (
+        <div
+          style={{
+            backgroundColor: theme.inputBg,
+            border: `1px solid ${theme.border}`,
+            borderRadius: "16px",
+            padding: "10px 14px",
+            marginBottom: "16px",
+            fontSize: "12px",
+            fontWeight: "600",
+            color: theme.muted,
+          }}
+        >
+          Syncing your groups...
+        </div>
+      )}
+      {serverSync === "error" && (
+        <div
+          style={{
+            backgroundColor: theme.mode === "dark" ? theme.coralTint : "#FEF2F2",
+            border: `1px solid ${theme.coral}`,
+            borderRadius: "16px",
+            padding: "12px 14px",
+            marginBottom: "16px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <AlertCircle size={16} color={theme.coral} />
+            <span style={{ fontSize: "12px", fontWeight: "600", color: theme.coralDark }}>
+              Couldn't reach the server
+            </span>
+          </div>
+          <button
+            onClick={onRetrySync}
+            style={{
+              backgroundColor: theme.coral,
+              color: "#FFF",
+              border: "none",
+              borderRadius: "10px",
+              padding: "5px 12px",
+              fontSize: "11.5px",
+              fontWeight: "700",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Free Tier Limit Indicator */}
       {!isPro && (

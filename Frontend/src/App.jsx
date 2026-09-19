@@ -12,11 +12,22 @@ import {
   loadStoredTheme,
 } from "./services/storage";
 
-// Services — authentication (Firebase identity; backend integration later)
+// Services — authentication (Firebase identity) + backend integration (Task 8)
 import {
   subscribeToAuthState,
   signOut as firebaseSignOut,
 } from "./services/authService";
+import { fetchBackendUser } from "./services/bootstrapService";
+import {
+  fetchMyGroups,
+  fetchGroupDetails,
+  createGroup as apiCreateGroup,
+} from "./services/groupsService";
+import {
+  mapGroupFromApi,
+  mapGroupsFromApi,
+  mergeServerAndLocalGroups,
+} from "./services/groupMapper";
 
 // Components
 import { MobileContainer } from "./components/common/MobileContainer";
@@ -50,6 +61,18 @@ export default function App() {
   const [profile, setProfile] = useState(() => loadProfile());
   const [themeMode, setThemeMode] = useState(() => profile?.theme || loadStoredTheme() || "light");
   const [groups, setGroups] = useState(() => loadGroups(profile?.name || "Sarthak", profile?.homeCurrency || "INR"));
+
+  // Task 8: server-backed identity + groups state.
+  //   backendUser     — the PostgreSQL User resolved from the Firebase identity
+  //                     via GET /auth/me (the backend is authoritative; the
+  //                     frontend never creates or assigns it).
+  //   groupsSyncState — 'idle' | 'loading' | 'ready' | 'error' for the groups sync.
+  //   syncNonce       — bump to retry a failed sync.
+  //   creatingGroup   — guards double-submits of server group creation.
+  const [backendUser, setBackendUser] = useState(null);
+  const [groupsSyncState, setGroupsSyncState] = useState("idle");
+  const [syncNonce, setSyncNonce] = useState(0);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   
   // Auth navigation stage: 'landing' | 'login'
   const [authStage, setAuthStage] = useState("landing");
@@ -128,6 +151,83 @@ export default function App() {
     if (groups) saveGroups(groups);
   }, [groups]);
 
+  // ---- Server groups sync (Task 8) ---------------------------------------
+  // Firebase auth → GET /auth/me → GET /groups. PostgreSQL is authoritative
+  // for server-backed groups; local-only groups (demo/pre-integration data)
+  // remain and keep working unchanged. Cached copies of server groups in
+  // localStorage are a READ CACHE only — server data always wins on sync and
+  // colliding local twins are dropped, so there is never a second source of
+  // truth for the same group. Pre-Firebase local sessions are not synced.
+  useEffect(() => {
+    if (!firebaseReady) return;
+    if (!authSession || authSession.authType !== "google") return;
+    let cancelled = false;
+    setGroupsSyncState("loading");
+    (async () => {
+      try {
+        const user = await fetchBackendUser();
+        if (cancelled) return;
+        setBackendUser(user);
+        const summaries = await fetchMyGroups();
+        if (cancelled) return;
+        // Authoritative member lists live on the detail endpoint; a detail
+        // failure falls back to its summary DTO (bounded 1+N — groups are few).
+        const detailed = await Promise.all(
+          summaries.map((dto) => fetchGroupDetails(dto.id).catch(() => dto))
+        );
+        if (cancelled) return;
+        setGroups((current) => {
+          const mapped = mapGroupsFromApi(detailed, {
+            localGroups: current,
+            myUserId: user.id,
+          });
+          // Server data wins; local twins of server groups are dropped so
+          // there is never a second source of truth for the same group.
+          return mergeServerAndLocalGroups(mapped, current);
+        });
+        setGroupsSyncState("ready");
+      } catch (error) {
+        if (cancelled) return;
+        setGroupsSyncState("error");
+        showToast({
+          message: error?.userMessage || "Couldn't sync your groups from the server.",
+          type: "error",
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [firebaseReady, authSession, syncNonce]);
+
+  // Opening a server-backed group re-reads authoritative details (members,
+  // roles, metadata). Local expense data carried in state is preserved by the
+  // mapper; expenses themselves remain local in Task 8 by design.
+  useEffect(() => {
+    if (!selectedGroupId || !backendUser) return;
+    const target = groups.find((g) => g.id === selectedGroupId);
+    if (!target || !target.isServerGroup) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const dto = await fetchGroupDetails(selectedGroupId);
+        if (cancelled) return;
+        setGroups((current) =>
+          current.map((g) =>
+            g.id === selectedGroupId
+              ? mapGroupFromApi(dto, { localGroup: g, myUserId: backendUser.id })
+              : g
+          )
+        );
+      } catch {
+        // Non-fatal: keep showing the last known data.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedGroupId, backendUser]);
+
   const showToast = (messageOrToast, type = "info") => {
     if (typeof messageOrToast === "string") {
       setToast({ message: messageOrToast, type });
@@ -203,29 +303,76 @@ export default function App() {
     });
   };
 
-  const handleCreateGroup = (groupData) => {
-    const newGroup = {
-      id: "g_" + Date.now(),
-      name: groupData.name,
-      currency: groupData.currency,
-      isRoommateGroup: groupData.isRoommateGroup,
-      members: [{ id: "you", name: profile.name, upi: `${profile.name.toLowerCase().replace(/\s+/g, "")}@upi` }],
-      expenses: [],
-    };
-
-    const updatedGroups = [...groups, newGroup];
-    setGroups(updatedGroups);
-    setSelectedGroupId(newGroup.id);
-    setActiveTab("groups");
-    showToast({ message: `Created group "${newGroup.name}"`, type: "success" });
+  // Server-backed creation (Task 8): POST /groups decides id, creator, OWNER
+  // membership and timestamps — the client sends only content fields. On
+  // failure nothing fake is inserted; the error surfaces with the existing toast.
+  const handleCreateGroup = async (groupData) => {
+    if (creatingGroup) return;
+    setCreatingGroup(true);
+    try {
+      const dto = await apiCreateGroup({
+        name: groupData.name,
+        currencyCode: groupData.currency,
+        isRoommateGroup: groupData.isRoommateGroup,
+      });
+      const mapped = mapGroupFromApi(dto, {
+        localGroup:
+          groups.find((g) => !g.isServerGroup && g.name === dto.name) ?? null,
+        myUserId: backendUser?.id ?? null,
+      });
+      if (!mapped) throw new Error("Invalid group data received from server");
+      setGroups((current) => [...current, mapped]);
+      setSelectedGroupId(mapped.id);
+      setActiveTab("groups");
+      showToast({ message: `Created group "${mapped.name}"`, type: "success" });
+    } catch (error) {
+      showToast({
+        message: error?.userMessage || "Could not create the group. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setCreatingGroup(false);
+    }
   };
 
   const handleUpdateGroup = (updatedGroup) => {
+    const current = groups.find((g) => g.id === updatedGroup.id);
+    // Server-backed groups: membership is authoritative in PostgreSQL. The
+    // member UI (free-text local names) cannot address server users, so member
+    // changes are politely refused while everything else (local expenses,
+    // settlements) keeps working.
+    if (current?.isServerGroup && updatedGroup.members !== current.members) {
+      const membersChanged =
+        JSON.stringify(updatedGroup.members) !== JSON.stringify(current.members);
+      if (membersChanged) {
+        showToast({
+          message: "Members of server-backed groups are managed on the server — member edits aren't available yet.",
+          type: "info",
+        });
+        setGroups(
+          groups.map((g) =>
+            g.id === updatedGroup.id
+              ? { ...updatedGroup, members: current.members }
+              : g
+          )
+        );
+        return;
+      }
+    }
     setGroups(groups.map((g) => (g.id === updatedGroup.id ? updatedGroup : g)));
   };
 
   const handleDeleteGroup = (groupId) => {
     const target = groups.find((g) => g.id === groupId);
+    // The backend has no group-deletion endpoint (by design so far) — never
+    // pretend a server-backed group was deleted.
+    if (target?.isServerGroup) {
+      showToast({
+        message: "Server-backed groups can't be deleted from the app yet.",
+        type: "info",
+      });
+      return;
+    }
     setGroups(groups.filter((g) => g.id !== groupId));
     if (selectedGroupId === groupId) setSelectedGroupId(null);
     showToast({ message: `Deleted group "${target?.name || "Group"}"`, type: "info" });
@@ -394,6 +541,8 @@ export default function App() {
             onCreateGroup={() => setShowCreateGroup(true)}
             isPro={profile.isPro}
             onShowProUpgrade={handleTriggerProUpgrade}
+            serverSync={groupsSyncState}
+            onRetrySync={() => setSyncNonce((n) => n + 1)}
             theme={theme}
           />
         )}

@@ -15,7 +15,13 @@
     "test": "node --test --import tsx tests/*.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "prisma:format": "prisma format"
+    "prisma:format": "prisma format",
+    "db:start": ".postgres-local\\bin\\pg_ctl.exe -D .postgres-local/data -o \"-p 54329\" -l .postgres-local/pg.log start",
+    "db:stop": ".postgres-local\\bin\\pg_ctl.exe -D .postgres-local/data stop",
+    "db:status": ".postgres-local\\bin\\pg_ctl.exe -D .postgres-local/data status",
+    "db:migrate": "prisma migrate deploy",
+    "db:verify": "tsx scripts/verify-schema.ts",
+    "db:smoke": "tsx scripts/smoke-postgres.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",

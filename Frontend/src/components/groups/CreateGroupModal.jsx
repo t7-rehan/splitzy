@@ -11,8 +11,9 @@ export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, 
   const [currency, setCurrency] = useState(userProfile.homeCurrency || "INR");
   const [isRoommate, setIsRoommate] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -29,14 +30,26 @@ export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, 
       return;
     }
 
-    onCreateGroup({
-      name: name.trim(),
-      currency,
-      isRoommateGroup: isRoommate,
-    });
-
-    setName("");
-    onClose();
+    // Task 8: creation is server-backed and async. The handler resolves with
+    // the created (mapped) group on success or null on failure — the sheet
+    // stays open on failure (the toast explains why) so the user can retry.
+    setIsSubmitting(true);
+    try {
+      const created = await onCreateGroup({
+        name: name.trim(),
+        currency,
+        isRoommateGroup: isRoommate,
+      });
+      if (created !== null && created !== undefined) {
+        setName("");
+        setIsRoommate(false);
+        onClose();
+      } else if (!error) {
+        setError("Could not create the group. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -128,8 +141,8 @@ export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, 
           <ClayButton variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </ClayButton>
-          <ClayButton type="submit" variant="primary" fullWidth>
-            Create Group
+          <ClayButton type="submit" variant="primary" fullWidth disabled={isSubmitting}>
+            {isSubmitting ? "Creating..." : "Create Group"}
           </ClayButton>
         </div>
       </form>
