@@ -79,6 +79,9 @@ export function mapMembersFromApi(dto, myUserId) {
     id: myUserId && m.userId === myUserId ? "you" : m.userId,
     name: m.name || "Member",
     role: m.role || "MEMBER",
+    // Server user id (additive, Task 9): lets the expense payload builders
+    // translate the viewer's "you" member id into the API's paidByUserId.
+    userId: m.userId,
   }));
 }
 

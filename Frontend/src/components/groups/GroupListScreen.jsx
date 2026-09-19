@@ -6,7 +6,7 @@ import { computeBalances } from "../../services/storage";
 import { ClayCard } from "../common/ClayCard";
 import { ClayButton } from "../common/ClayButton";
 
-export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, serverSync = "idle", onRetrySync, theme }) {
+export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, serverSync = "idle", syncErrorMessage = null, onRetrySync, theme }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // 'all' | 'due' | 'paid'
 
@@ -79,7 +79,9 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <AlertCircle size={16} color={theme.coral} />
             <span style={{ fontSize: "12px", fontWeight: "600", color: theme.coralDark }}>
-              Couldn't reach the server
+              {/* The REAL failure cause (network vs HTTP error), not a
+                  hardcoded network message. */}
+              {syncErrorMessage || "Couldn't reach the server"}
             </span>
           </div>
           <button

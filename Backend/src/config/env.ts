@@ -65,6 +65,9 @@ export interface Env {
   isProduction: boolean;
   corsOrigins: string[];
   databaseUrl: string;
+  /** Direct database URL (bypasses connection pooler). Used by Prisma for
+   *  migrations and introspection against Supabase. Not required for runtime. */
+  directUrl: string;
   /** Firebase project id — consumed by token verification (Task 4). Not
    *  required to boot; verification only becomes possible once it is set
    *  together with deployment credentials. */
@@ -88,6 +91,7 @@ export function loadEnv(): Env {
     isProduction: nodeEnv === 'production',
     corsOrigins: parseOrigins(rawEnv.CORS_ORIGIN),
     databaseUrl: rawEnv.DATABASE_URL?.trim() ?? '',
+    directUrl: rawEnv.DIRECT_URL?.trim() ?? '',
     firebaseProjectId: rawEnv.FIREBASE_PROJECT_ID?.trim() ?? '',
   };
 

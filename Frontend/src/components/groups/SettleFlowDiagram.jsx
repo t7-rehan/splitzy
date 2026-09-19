@@ -5,7 +5,7 @@ import { fmtMoney } from "../../services/currency";
 import { ClayCard } from "../common/ClayCard";
 import { ClayButton } from "../common/ClayButton";
 
-export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, onOpenUPI, isPro }) {
+export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, onOpenUPI, isPro, busyKey = null }) {
   const C = useTheme();
   const [copied, setCopied] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -127,6 +127,7 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
           const toName = nameOf(s.to);
           const isYouDebtor = s.from === "you";
           const isYouCreditor = s.to === "you";
+          const isBusy = busyKey === `${s.from}>${s.to}`;
 
           return (
             <div
@@ -179,9 +180,10 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                   </button>
                 )}
 
-                {/* Mark as Paid CTA */}
+                {/* Mark as Paid CTA (disabled while the request is in flight) */}
                 <button
                   onClick={() => onMarkPaid(s)}
+                  disabled={busyKey !== null}
                   style={{
                     padding: "6px 10px",
                     borderRadius: "10px",
@@ -190,10 +192,11 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                     border: "none",
                     fontSize: "11px",
                     fontWeight: "700",
-                    cursor: "pointer",
+                    cursor: busyKey ? "default" : "pointer",
+                    opacity: busyKey ? (isBusy ? 1 : 0.55) : 1,
                   }}
                 >
-                  Settle
+                  {isBusy ? "..." : "Settle"}
                 </button>
               </div>
             </div>

@@ -15,6 +15,12 @@ export function getShares(e) {
   const shares = {};
   if (!e) return shares;
 
+  // Task 9: server-backed expenses carry the exact shares PostgreSQL
+  // calculated (expenseMapper). Those are authoritative — never re-derived.
+  if (e.isServerExpense && e.serverShares) {
+    return { ...e.serverShares };
+  }
+
   if (e.splitType === "equal") {
     const participants = e.participants || [];
     if (participants.length > 0) {

@@ -15,7 +15,7 @@ const ICON_MAP = {
   Other: Tag,
 };
 
-export function ExpenseCard({ expense, members, currency, onEdit, onDelete }) {
+export function ExpenseCard({ expense, members, currency, onEdit, onDelete, deleting = false }) {
   const { theme } = useTheme();
   const [confirming, setConfirming] = useState(false);
 
@@ -126,6 +126,7 @@ export function ExpenseCard({ expense, members, currency, onEdit, onDelete }) {
             <span style={{ fontSize: "11px", color: theme.coral, fontWeight: "700" }}>Confirm?</span>
             <button
               onClick={onDelete}
+              disabled={deleting}
               style={{
                 backgroundColor: theme.coral,
                 color: "#FFF",
@@ -134,10 +135,11 @@ export function ExpenseCard({ expense, members, currency, onEdit, onDelete }) {
                 padding: "2px 8px",
                 fontSize: "11px",
                 fontWeight: "700",
-                cursor: "pointer",
+                cursor: deleting ? "default" : "pointer",
+                opacity: deleting ? 0.7 : 1,
               }}
             >
-              Yes
+              {deleting ? "..." : "Yes"}
             </button>
             <button
               onClick={() => setConfirming(false)}

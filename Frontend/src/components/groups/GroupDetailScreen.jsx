@@ -7,9 +7,7 @@ import { ClayButton } from "../common/ClayButton";
 import { PeopleManager } from "./PeopleManager";
 import { SettleFlowDiagram } from "./SettleFlowDiagram";
 import { ExpenseCard } from "../expenses/ExpenseCard";
-import { RecurringSection } from "../expenses/RecurringSection";
-
-export function GroupDetailScreen({
+import { RecurringSection } from "../expenses/RecurringSection";export function GroupDetailScreen({
   group,
   onBack,
   onUpdateGroup,
@@ -22,8 +20,10 @@ export function GroupDetailScreen({
   onShowProUpgrade,
   onToast,
   theme,
+  deletingExpenseIds = [],
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [settlingId, setSettlingId] = useState(null);
 
   // Compute fresh live balances
   const net = computeBalances(group.members, group.expenses);
@@ -32,13 +32,14 @@ export function GroupDetailScreen({
   const isOwed = myNet > 0.5;
   const isOwe = myNet < -0.5;
 
+  // Task 9: marking a settlement paid is server-backed and async. The parent
+  // resolves with the saved expense on success or null on failure (with its
+  // own error toast); the button is disabled while the request is in flight.
   const handleMarkPaid = (settlement) => {
-    // Record a settlement expense in group
     const fromName = group.members.find((m) => m.id === settlement.from)?.name || "Someone";
     const toName = group.members.find((m) => m.id === settlement.to)?.name || "Someone";
 
     const settlementExpense = {
-      id: "e_settle_" + Date.now(),
       desc: `Settlement: ${fromName} paid ${toName}`,
       category: "Other",
       paidBy: settlement.from,
@@ -49,33 +50,64 @@ export function GroupDetailScreen({
       recurring: false,
     };
 
-    onUpdateGroup({
-      ...group,
-      expenses: [...group.expenses, settlementExpense],
-    });
-
-    if (onToast) onToast({ type: "success", message: `Settled ${fmtMoney(settlement.amount, group.currency)}!` });
+    setSettlingId(settlement.from + ">" + settlement.to);
+    Promise.resolve(
+      onUpdateGroup(
+        { ...group, expenses: [...group.expenses, settlementExpense] },
+        { createExpensePayload: settlementExpense }
+      )
+    )
+      .then((saved) => {
+        if (onToast) {
+          onToast(
+            saved
+              ? { type: "success", message: `Settled ${fmtMoney(settlement.amount, group.currency)}!` }
+              : { type: "info", message: "Settlement not saved — please try again." }
+          );
+        }
+      })
+      .finally(() => setSettlingId(null));
   };
 
+  // Task 9: deletion is server-backed for server groups — the parent makes
+  // the DELETE request and resolves true only if PostgreSQL confirmed. The
+  // expense stays visible on failure (with the parent's error toast).
   const handleDeleteExpense = (expenseId) => {
-    onUpdateGroup({
+    const removal = {
       ...group,
       expenses: group.expenses.filter((e) => e.id !== expenseId),
-    });
-    if (onToast) onToast({ type: "info", message: "Expense deleted" });
+    };
+    Promise.resolve(onUpdateGroup(removal, { deletedExpenseId: expenseId })).then(
+      (removed) => {
+        if (!removed && onToast) {
+          onToast({ type: "error", message: "Couldn't delete the expense. Please try again." });
+        }
+      }
+    );
   };
 
   const handleLogRecurring = (recurringExpense) => {
+    // A fresh id is essential: the modal treats an id that already exists in
+    // the group as an EDIT of the recurring template; logging must CREATE.
     const newExpense = {
       ...recurringExpense,
       id: "e_" + Date.now(),
       date: new Date().toISOString(),
     };
-    onUpdateGroup({
-      ...group,
-      expenses: [...group.expenses, newExpense],
+    Promise.resolve(
+      onUpdateGroup(
+        { ...group, expenses: [...group.expenses, newExpense] },
+        { createExpensePayload: newExpense }
+      )
+    ).then((saved) => {
+      if (onToast) {
+        onToast(
+          saved
+            ? { type: "success", message: `Logged ${recurringExpense.desc} for this month!` }
+            : { type: "info", message: "Couldn't log the expense — please try again." }
+        );
+      }
     });
-    if (onToast) onToast({ type: "success", message: `Logged ${recurringExpense.desc} for this month!` });
   };
 
   return (
@@ -196,6 +228,7 @@ export function GroupDetailScreen({
         onMarkPaid={handleMarkPaid}
         onOpenUPI={onOpenUPI}
         isPro={isPro}
+        busyKey={settlingId}
       />
 
       {/* Recurring Monthly Expenses */}
@@ -229,6 +262,7 @@ export function GroupDetailScreen({
                 currency={group.currency}
                 onEdit={() => onEditExpense(exp)}
                 onDelete={() => handleDeleteExpense(exp.id)}
+                deleting={deletingExpenseIds.includes(exp.id)}
               />
             ))}
           </div>

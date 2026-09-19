@@ -107,8 +107,28 @@ Notes:
   client is created lazily. `DATABASE_URL` becomes required for migrations and
   for any future endpoint that queries data.
 - `CORS_ORIGIN` accepts multiple comma-separated origins, e.g.
-  `CORS_ORIGIN=http://localhost:5173,https://app.splitzy.example`.
-- `CORS_ORIGIN=*` is rejected by design; only explicit origins are allowed.
+  `CORS_ORIGIN=http://localhost:5173,https://app.splitzy.example`. Include
+  **every** origin the frontend is served from — `localhost` and `127.0.0.1`
+  are different origins for CORS, and a LAN (phone) origin must be listed
+  explicitly too. `CORS_ORIGIN=*` is rejected by design; only explicit
+  origins are allowed.
+
+#### Port resolution (ambient PORT hazard)
+
+The backend resolves its port in this order:
+
+1. explicit `--port N` CLI flag;
+2. `PORT` from this project's git-ignored `.env` file;
+3. ambient `process.env.PORT`;
+4. default `5000` (matches the frontend's default `VITE_API_BASE_URL`).
+
+The project's own `.env` deliberately **beats** an ambient `PORT` inherited
+from a parent shell: some shells export a generic `PORT` (e.g. `PORT=0`) to
+every child process, which used to silently send the API to a random
+ephemeral port while the frontend kept calling its fixed URL — every request
+then failed as a network error. Invalid values fail fast at startup instead
+of binding somewhere unexpected (`PORT=0` remains valid when chosen
+explicitly).
 
 ### 3. Run the development server
 
@@ -592,3 +612,31 @@ The React frontend now consumes this API (see `Frontend/README.md`):
 
 No schema or backend-behavior changes were required: 122/122 backend tests,
 `db:verify` (51 checks) and `db:smoke` (79 checks) all green.
+
+## Task 9 status — complete server-backed expense integration
+
+The frontend's expense system now runs entirely through this API (see
+`Frontend/README.md`):
+
+- `GET/POST /api/v1/groups/:groupId/expenses` and
+  `GET/PATCH/DELETE .../expenses/:expenseId` — list, create, edit and delete
+  are server-backed for server groups; the client sends only content fields
+  (amounts as integer minor-unit strings, percentages as integer basis
+  points) and never identity/creator fields.
+- Split shares are **server-calculated** and authoritative: the client
+  displays the `shareMinor` values from PostgreSQL as-is (deterministic
+  remainder rules included) instead of re-deriving them.
+- PATCH bodies are fields-only when the split is unchanged (participant/item
+  rows are preserved), and carry the complete merged split when it changes.
+- Saving is never optimistic: the UI updates only after the PostgreSQL-backed
+  response arrives; failures keep the previous state and surface a safe
+  message.
+- Settlement "Settle" / recurring "Log monthly" / UPI "marked as settled"
+  flows create real server expenses through the same endpoint.
+
+Identity model now includes: **PostgreSQL Expense = shared server-side
+expense; localStorage = read cache only (server data always wins).**
+
+No schema changes were required: 122/122 backend tests, `db:verify`,
+`db:smoke` (79 checks) and a 23-check live multi-user HTTP verification
+(`scripts/task9-live-verify.mjs`, dev-auth, local only) all green.

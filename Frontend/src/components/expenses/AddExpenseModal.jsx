@@ -30,6 +30,7 @@ export function AddExpenseModal({ isOpen, onClose, group, onSaveExpense, editing
   const [items, setItems] = useState([]);
   const [recurring, setRecurring] = useState(false);
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!group || !isOpen) return;
@@ -114,7 +115,11 @@ export function AddExpenseModal({ isOpen, onClose, group, onSaveExpense, editing
   const itemsTotal = items.reduce((sum, it) => sum + (parseFloat(it.price) || 0), 0);
   const pctTotal = Object.values(percentages).reduce((sum, p) => sum + (parseFloat(p) || 0), 0);
 
-  const handleSubmit = (e) => {
+  // Task 9: saving is server-backed and async. onSaveExpense resolves with the
+  // saved (server-authoritative) expense on success or null on failure — the
+  // sheet stays open on failure (the toast/form error explains why) so the
+  // user can retry without retyping.
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -147,8 +152,17 @@ export function AddExpenseModal({ isOpen, onClose, group, onSaveExpense, editing
       recurring,
     };
 
-    onSaveExpense(expensePayload);
-    onClose();
+    setIsSubmitting(true);
+    try {
+      const saved = await onSaveExpense(expensePayload);
+      if (saved !== null && saved !== undefined) {
+        onClose();
+      } else if (!error) {
+        setError("Could not save the expense. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -514,8 +528,8 @@ export function AddExpenseModal({ isOpen, onClose, group, onSaveExpense, editing
           <ClayButton variant="secondary" fullWidth onClick={onClose}>
             Cancel
           </ClayButton>
-          <ClayButton type="submit" variant="primary" fullWidth>
-            {editingExpense ? "Save Changes" : "Save Expense"}
+          <ClayButton type="submit" variant="primary" fullWidth disabled={isSubmitting}>
+            {isSubmitting ? "Saving..." : editingExpense ? "Save Changes" : "Save Expense"}
           </ClayButton>
         </div>
       </form>

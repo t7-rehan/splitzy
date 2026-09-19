@@ -1,0 +1,70 @@
+[error] UNHANDLED GET /api/v1/auth/me: 
+Invalid `repo.findUnique()` invocation in
+D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:31
+
+  91 ): Promise<User> {
+  92   const repo = repository();
+  93 
+→ 94   const existing = await repo.findUnique(
+Can't reach database server at `127.0.0.1:54329`
+
+Please make sure your database server is running at `127.0.0.1:54329`. PrismaClientInitializationError: 
+Invalid `repo.findUnique()` invocation in
+D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:31
+
+  91 ): Promise<User> {
+  92   const repo = repository();
+  93 
+→ 94   const existing = await repo.findUnique(
+Can't reach database server at `127.0.0.1:54329`
+
+Please make sure your database server is running at `127.0.0.1:54329`.
+    at ei.handleRequestError (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:242:13)
+    at ei.handleAndLogRequestError (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:174:12)
+    at ei.request (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:143:12)
+    at async a (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\getPrismaClient.ts:833:24)
+    at async findOrProvisionUser (D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:20)
+    at async getMe (D:\PERSONAL PROJECTS\splitzy\Backend\src\controllers\auth.controller.ts:23:18) {
+  clientVersion: '6.19.3',
+  errorCode: undefined,
+  retryable: undefined
+}
+[error] UNHANDLED GET /api/v1/auth/me: 
+Invalid `repo.findUnique()` invocation in
+D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:31
+
+  91 ): Promise<User> {
+  92   const repo = repository();
+  93 
+→ 94   const existing = await repo.findUnique(
+Can't reach database server at `127.0.0.1:54329`
+
+Please make sure your database server is running at `127.0.0.1:54329`. PrismaClientInitializationError: 
+Invalid `repo.findUnique()` invocation in
+D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:31
+
+  91 ): Promise<User> {
+  92   const repo = repository();
+  93 
+→ 94   const existing = await repo.findUnique(
+Can't reach database server at `127.0.0.1:54329`
+
+Please make sure your database server is running at `127.0.0.1:54329`.
+    at ei.handleRequestError (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:242:13)
+    at ei.handleAndLogRequestError (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:174:12)
+    at ei.request (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\RequestHandler.ts:143:12)
+    at async a (D:\PERSONAL PROJECTS\splitzy\Backend\node_modules\@prisma\client\src\runtime\getPrismaClient.ts:833:24)
+    at async findOrProvisionUser (D:\PERSONAL PROJECTS\splitzy\Backend\src\services\currentUserService.ts:94:20)
+    at async getMe (D:\PERSONAL PROJECTS\splitzy\Backend\src\controllers\auth.controller.ts:23:18) {
+  clientVersion: '6.19.3',
+  errorCode: undefined,
+  retryable: undefined
+}
+[error] UNAUTHORIZED 401 GET /api/v1/auth/me: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 GET /api/v1/auth/me: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token

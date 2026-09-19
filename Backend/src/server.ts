@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
+import { resolvePort } from './config/port.js';
 import { disconnectPrisma } from './services/db.js';
 
 /**
@@ -13,10 +14,16 @@ import { disconnectPrisma } from './services/db.js';
 const env = loadEnv();
 const app = createApp();
 
-const server = app.listen(env.port, () => {
+// Port authority: the project's own Backend/.env PORT wins over an ambient
+// process-scope PORT (e.g. PORT=0 inherited from a parent shell), which
+// otherwise silently sends the API to a random ephemeral port while the
+// frontend calls its fixed VITE_API_BASE_URL. See src/config/port.ts.
+const port = resolvePort();
+
+const server = app.listen(port, () => {
   const address = server.address();
   const boundPort =
-    typeof address === 'object' && address !== null ? address.port : env.port;
+    typeof address === 'object' && address !== null ? address.port : port;
   console.log(
     `[splitzy-api] ${env.nodeEnv} server listening on http://localhost:${boundPort}`,
   );
@@ -24,7 +31,7 @@ const server = app.listen(env.port, () => {
 
 server.on('error', (error: NodeJS.ErrnoException) => {
   if (error.code === 'EADDRINUSE') {
-    console.error(`[splitzy-api] Port ${env.port} is already in use.`);
+    console.error(`[splitzy-api] Port ${port} is already in use.`);
   } else {
     console.error('[splitzy-api] Server failed to start:', error);
   }

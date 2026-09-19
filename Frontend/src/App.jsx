@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { GLOBAL_STYLES, getThemeTokens, ThemeProvider } from "./theme/clayTheme";
 import {
   loadProfile,
@@ -28,6 +28,21 @@ import {
   mapGroupsFromApi,
   mergeServerAndLocalGroups,
 } from "./services/groupMapper";
+import { appendGroupOnce } from "./services/groupState";
+import { ScreenErrorBoundary } from "./components/common/ScreenErrorBoundary";
+import {
+  fetchGroupExpenses,
+  createExpense as apiCreateExpense,
+  updateExpense as apiUpdateExpense,
+  deleteExpense as apiDeleteExpense,
+} from "./services/expensesService";
+import {
+  buildExpenseApiPayload,
+  buildExpensePatchPayload,
+  mapExpenseFromApi,
+  mapExpensesFromApi,
+  mergeServerAndLocalExpenses,
+} from "./services/expenseMapper";
 
 // Components
 import { MobileContainer } from "./components/common/MobileContainer";
@@ -71,8 +86,15 @@ export default function App() {
   //   creatingGroup   — guards double-submits of server group creation.
   const [backendUser, setBackendUser] = useState(null);
   const [groupsSyncState, setGroupsSyncState] = useState("idle");
+  // The sync failure's user-safe message — the Groups screen banner shows the
+  // REAL cause (network vs HTTP error) instead of a hardcoded network text.
+  const [syncErrorMessage, setSyncErrorMessage] = useState(null);
   const [syncNonce, setSyncNonce] = useState(0);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  // Task 9: server-backed expense sync (same pattern as the groups sync) and
+  // deletion bookkeeping for the optimistic-none UI (ExpenseCard confirm row).
+  const [expensesSyncState, setExpensesSyncState] = useState("idle");
+  const [deletingExpenseIds, setDeletingExpenseIds] = useState([]);
   
   // Auth navigation stage: 'landing' | 'login'
   const [authStage, setAuthStage] = useState("landing");
@@ -97,6 +119,13 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const theme = getThemeTokens(themeMode);
+
+  // Latest-groups mirror for async flows that must read current state without
+  // re-running (the groups sync reads it right before committing its result).
+  const groupsRef = useRef(groups);
+  useEffect(() => {
+    groupsRef.current = groups;
+  }, [groups]);
 
   // Firebase auth state is the single source of truth for sign-in. The listener
   // fires once with the current session (so refresh restores login) and again
@@ -163,6 +192,7 @@ export default function App() {
     if (!authSession || authSession.authType !== "google") return;
     let cancelled = false;
     setGroupsSyncState("loading");
+    setSyncErrorMessage(null);
     (async () => {
       try {
         const user = await fetchBackendUser();
@@ -176,11 +206,18 @@ export default function App() {
           summaries.map((dto) => fetchGroupDetails(dto.id).catch(() => dto))
         );
         if (cancelled) return;
+        const mapped = mapGroupsFromApi(detailed, {
+          localGroups: groupsRef.current,
+          myUserId: user.id,
+        });
+        // Commit ONLY fully mapped groups. A half-mapped entry (e.g. a group
+        // whose members array failed to map) must never enter state — the
+        // detail screen would render undefined fields. mapGroupsFromApi
+        // already drops null mappings; this keeps the invariant explicit.
+        if (mapped.some((g) => !g || !g.id || !Array.isArray(g.members))) {
+          throw new Error("Malformed group payload from server");
+        }
         setGroups((current) => {
-          const mapped = mapGroupsFromApi(detailed, {
-            localGroups: current,
-            myUserId: user.id,
-          });
           // Server data wins; local twins of server groups are dropped so
           // there is never a second source of truth for the same group.
           return mergeServerAndLocalGroups(mapped, current);
@@ -189,8 +226,15 @@ export default function App() {
       } catch (error) {
         if (cancelled) return;
         setGroupsSyncState("error");
+        setSyncErrorMessage(
+          error?.userMessage || "Couldn't sync your groups from the server."
+        );
+        // Distinct, honest messages: a genuine network failure is different
+        // from an HTTP failure (which carries the backend's safe message).
         showToast({
-          message: error?.userMessage || "Couldn't sync your groups from the server.",
+          message:
+            error?.userMessage ||
+            "Couldn't sync your groups from the server.",
           type: "error",
         });
       }
@@ -200,27 +244,95 @@ export default function App() {
     };
   }, [firebaseReady, authSession, syncNonce]);
 
+  // ---- Server expenses sync (Task 9) --------------------------------------
+  // PostgreSQL is authoritative for expenses of server-backed groups. Expenses
+  // fetch AFTER the group list resolves (the group sync needs it; the expense
+  // sync needs the group id + viewer identity). Local expenses of genuinely
+  // local groups are untouched; stale local copies of server expenses are
+  // replaced (SERVER > LOCAL CACHE) while still-unpersisted local entries are
+  // kept so a just-added expense never vanishes mid-flight.
+  useEffect(() => {
+    if (groupsSyncState !== "ready") return;
+    if (!backendUser) return;
+    let cancelled = false;
+    setExpensesSyncState("loading");
+    (async () => {
+      try {
+        const serverGroups = groups.filter((g) => g.isServerGroup);
+        const results = await Promise.all(
+          serverGroups.map(async (g) => {
+            try {
+              const list = await fetchGroupExpenses(g.id);
+              return [g, mapExpensesFromApi(list, { myUserId: backendUser.id })];
+            } catch {
+              return [g, null]; // non-fatal: keep current view of this group
+            }
+          })
+        );
+        if (cancelled) return;
+        setGroups((current) =>
+          current.map((g) => {
+            if (!g.isServerGroup) return g;
+            const mapped = results.find(([grp]) => grp.id === g.id)?.[1];
+            if (mapped === null || mapped === undefined) return g;
+            return {
+              ...g,
+              expenses: mergeServerAndLocalExpenses(mapped, g.expenses, {
+                groupIsServer: true,
+              }),
+            };
+          })
+        );
+        if (!cancelled) setExpensesSyncState("ready");
+      } catch {
+        if (!cancelled) setExpensesSyncState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupsSyncState, backendUser, syncNonce]);
+
   // Opening a server-backed group re-reads authoritative details (members,
-  // roles, metadata). Local expense data carried in state is preserved by the
-  // mapper; expenses themselves remain local in Task 8 by design.
+  // roles, metadata) and, in Task 9, the authoritative expense list.
+  // Track the fetch generation so a SLOW response for a PREVIOUSLY opened
+  // group can never overwrite the group now on screen (open A → open B fast →
+  // A's late response must not clobber B's data).
+  const openFetchRef = useRef(0);
   useEffect(() => {
     if (!selectedGroupId || !backendUser) return;
     const target = groups.find((g) => g.id === selectedGroupId);
     if (!target || !target.isServerGroup) return;
+    const generation = ++openFetchRef.current;
     let cancelled = false;
     (async () => {
       try {
-        const dto = await fetchGroupDetails(selectedGroupId);
+        const [dto, expenseDtos] = await Promise.all([
+          fetchGroupDetails(selectedGroupId),
+          fetchGroupExpenses(selectedGroupId).catch(() => null),
+        ]);
         if (cancelled) return;
         setGroups((current) =>
-          current.map((g) =>
-            g.id === selectedGroupId
-              ? mapGroupFromApi(dto, { localGroup: g, myUserId: backendUser.id })
-              : g
-          )
+          current.map((g) => {
+            if (g.id !== selectedGroupId) return g;
+            const mapped = mapGroupFromApi(dto, {
+              localGroup: g,
+              myUserId: backendUser.id,
+            });
+            if (!mapped) return g; // malformed DTO — keep the current view
+            if (expenseDtos) {
+              mapped.expenses = mergeServerAndLocalExpenses(
+                mapExpensesFromApi(expenseDtos, { myUserId: backendUser.id }),
+                g.expenses,
+                { groupIsServer: true }
+              );
+            }
+            return mapped;
+          })
         );
       } catch {
-        // Non-fatal: keep showing the last known data.
+        // Non-fatal by design: the last known (mapped, complete) view stays
+        // on screen. Open-group failures never blank or degrade the UI.
       }
     })();
     return () => {
@@ -321,13 +433,21 @@ export default function App() {
         myUserId: backendUser?.id ?? null,
       });
       if (!mapped) throw new Error("Invalid group data received from server");
-      setGroups((current) => [...current, mapped]);
+      // Inserted exactly once — a duplicate response/re-submit can never
+      // create two entries with the same server id.
+      setGroups((current) => appendGroupOnce(current, mapped));
       setSelectedGroupId(mapped.id);
       setActiveTab("groups");
       showToast({ message: `Created group "${mapped.name}"`, type: "success" });
+      // Task 8 modal contract: resolve with the created group on success so
+      // CreateGroupModal closes. (Its absence made the modal report failure
+      // — and stay open — after a successful creation.)
+      return mapped;
     } catch (error) {
       showToast({
-        message: error?.userMessage || "Could not create the group. Please try again.",
+        message:
+          error?.userMessage ||
+          "Could not create the group. Please try again.",
         type: "error",
       });
     } finally {
@@ -335,12 +455,23 @@ export default function App() {
     }
   };
 
-  const handleUpdateGroup = (updatedGroup) => {
+  const handleUpdateGroup = (updatedGroup, meta = {}) => {
+    // Task 9: explicit server-backed expense removal (delete confirmation).
+    // The DELETE call must succeed before the expense leaves state — on
+    // failure nothing is removed and the error is surfaced via the toast.
+    if (meta.deletedExpenseId) {
+      return removeExpenseOnServer(updatedGroup.id, meta.deletedExpenseId);
+    }
     const current = groups.find((g) => g.id === updatedGroup.id);
+    // Task 9: server-backed expense creation from non-modal flows (settlement
+    // "Settle" button, recurring "Log monthly"). No optimistic insertion —
+    // the mapped server expense enters state only after PostgreSQL confirms.
+    if (meta.createExpensePayload && current?.isServerGroup) {
+      return handleSaveExpense(meta.createExpensePayload);
+    }
     // Server-backed groups: membership is authoritative in PostgreSQL. The
     // member UI (free-text local names) cannot address server users, so member
-    // changes are politely refused while everything else (local expenses,
-    // settlements) keeps working.
+    // changes are politely refused while everything else keeps working.
     if (current?.isServerGroup && updatedGroup.members !== current.members) {
       const membersChanged =
         JSON.stringify(updatedGroup.members) !== JSON.stringify(current.members);
@@ -378,20 +509,115 @@ export default function App() {
     showToast({ message: `Deleted group "${target?.name || "Group"}"`, type: "info" });
   };
 
-  const handleSaveExpense = (expensePayload) => {
-    const targetGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
-    if (!targetGroup) return;
+  // ---------------------------------------------------------------------------
+  // Server-backed expense persistence (Task 9) — request → server → state.
+  // NEVER optimistic: the modal stays open and the UI unchanged until
+  // PostgreSQL confirms; only then does the server-authoritative expense
+  // (its calculated shares) enter state.
+  // ---------------------------------------------------------------------------
 
-    const existingIdx = targetGroup.expenses.findIndex((e) => e.id === expensePayload.id);
-    let updatedExpenses;
-    if (existingIdx >= 0) {
-      updatedExpenses = targetGroup.expenses.map((e) => (e.id === expensePayload.id ? expensePayload : e));
-    } else {
-      updatedExpenses = [...targetGroup.expenses, expensePayload];
+  const replaceExpenseInGroup = (groupId, expense, { removeLocalId = null } = {}) => {
+    setGroups((current) =>
+      current.map((g) => {
+        if (g.id !== groupId) return g;
+        let expenses = g.expenses;
+        // A carried-over local copy that was just persisted server-side must
+        // not linger as a duplicate of the real (server) expense.
+        if (removeLocalId) {
+          expenses = expenses.filter((e) => e.isServerExpense || e.id !== removeLocalId);
+        }
+        const existingIdx = expenses.findIndex((e) => e.id === expense.id);
+        expenses =
+          existingIdx >= 0
+            ? expenses.map((e) => (e.id === expense.id ? expense : e))
+            : [...expenses, expense];
+        return { ...g, expenses };
+      })
+    );
+  };
+
+  const handleSaveExpense = async (expensePayload) => {
+    const targetGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
+    if (!targetGroup) return null;
+
+    // Server-backed groups always persist through the API. The viewer's
+    // membership entry carries the server user id ("you" -> members.find(...));
+    // without it there is nothing the backend could address.
+    if (targetGroup.isServerGroup) {
+      const existing = targetGroup.expenses.find((e) => e.id === expensePayload.id);
+      try {
+        if (existing && existing.isServerExpense) {
+          // EDIT — fields-only patch when the split is unchanged so stored
+          // participant/item rows are preserved (Task 6 update contract).
+          const patch = buildExpensePatchPayload(
+            expensePayload,
+            targetGroup,
+            existing
+          );
+          const dto = await apiUpdateExpense(targetGroup.id, existing.id, patch);
+          const mapped = mapExpenseFromApi(dto, { myUserId: backendUser?.id ?? null });
+          replaceExpenseInGroup(targetGroup.id, mapped);
+          showToast({ message: "Expense updated", type: "success" });
+          return mapped;
+        }
+        // CREATE
+        const payload = buildExpenseApiPayload(expensePayload, targetGroup);
+        const dto = await apiCreateExpense(targetGroup.id, payload);
+        const mapped = mapExpenseFromApi(dto, { myUserId: backendUser?.id ?? null });
+        replaceExpenseInGroup(targetGroup.id, mapped, {
+          removeLocalId: expensePayload.id,
+        });
+        showToast({ message: "Expense added!", type: "success" });
+        return mapped;
+      } catch (error) {
+        showToast({
+          message:
+            error?.userMessage ||
+            "Couldn't save the expense. Please check your connection and try again.",
+          type: "error",
+        });
+        return null; // modal stays open; no fake expense is ever inserted
+      }
     }
 
-    handleUpdateGroup({ ...targetGroup, expenses: updatedExpenses });
+    // Genuinely local group: preserve the original synchronous local behavior.
+    const localExpense = { ...expensePayload };
+    const existingIdx = targetGroup.expenses.findIndex((e) => e.id === localExpense.id);
+    const updatedExpenses =
+      existingIdx >= 0
+        ? targetGroup.expenses.map((e) => (e.id === localExpense.id ? localExpense : e))
+        : [...targetGroup.expenses, localExpense];
+    setGroups(
+      groups.map((g) => (g.id === targetGroup.id ? { ...g, expenses: updatedExpenses } : g))
+    );
     showToast({ message: existingIdx >= 0 ? "Expense updated" : "Expense added!", type: "success" });
+    return localExpense;
+  };
+
+  const removeExpenseOnServer = async (groupId, expenseId) => {
+    setDeletingExpenseIds((ids) => [...ids, expenseId]);
+    try {
+      await apiDeleteExpense(groupId, expenseId);
+      setGroups((current) =>
+        current.map((g) =>
+          g.id === groupId
+            ? { ...g, expenses: g.expenses.filter((e) => e.id !== expenseId) }
+            : g
+        )
+      );
+      showToast({ message: "Expense deleted", type: "info" });
+      return true;
+    } catch (error) {
+      showToast({
+        message:
+          error?.userMessage ||
+          "Couldn't delete the expense. Please check your connection and try again.",
+        type: "error",
+      });
+      return false; // expense stays visible
+    } finally {
+      setDeletingExpenseIds((ids) => ids.filter((id) => id !== expenseId));
+    }
   };
 
   const handleOpenUPIModal = (details) => {
@@ -399,12 +625,14 @@ export default function App() {
     setShowUPI(true);
   };
 
-  const handleConfirmUPIPayment = (details) => {
+  // Task 9: the UPI "settled" marker becomes a real server expense too —
+  // payer = the viewer, participant = the payee. On failure nothing is saved
+  // and the error surfaces via toast; the modal shows its own flow state.
+  const handleConfirmUPIPayment = async (details) => {
     const targetGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
-    if (!targetGroup) return;
+    if (!targetGroup) return null;
 
     const settlementExpense = {
-      id: "e_upi_" + Date.now(),
       desc: `UPI Settlement to ${details.payeeName}`,
       category: "Other",
       paidBy: "you",
@@ -415,8 +643,11 @@ export default function App() {
       recurring: false,
     };
 
-    handleUpdateGroup({ ...targetGroup, expenses: [...targetGroup.expenses, settlementExpense] });
-    showToast({ message: `Payment of ₹${details.amount} marked as settled!`, type: "success" });
+    const saved = await handleSaveExpense(settlementExpense);
+    if (saved) {
+      showToast({ message: `Payment of ₹${details.amount} marked as settled!`, type: "success" });
+    }
+    return saved;
   };
 
   const handleTriggerProUpgrade = (reason = "") => {
@@ -542,15 +773,19 @@ export default function App() {
             isPro={profile.isPro}
             onShowProUpgrade={handleTriggerProUpgrade}
             serverSync={groupsSyncState}
+            syncErrorMessage={syncErrorMessage}
             onRetrySync={() => setSyncNonce((n) => n + 1)}
             theme={theme}
           />
         )}
 
-        {/* Group Detail View */}
+        {/* Group Detail View — wrapped so a render bug can never blank the
+            whole app; the boundary shows an existing-style error card. */}
         {selectedGroup && (
+          <ScreenErrorBoundary>
           <GroupDetailScreen
             group={selectedGroup}
+            deletingExpenseIds={deletingExpenseIds}
             onBack={() => setSelectedGroupId(null)}
             onUpdateGroup={handleUpdateGroup}
             onDeleteGroup={() => handleDeleteGroup(selectedGroup.id)}
@@ -569,6 +804,7 @@ export default function App() {
             onToast={showToast}
             theme={theme}
           />
+          </ScreenErrorBoundary>
         )}
 
         {/* Calendar Tab */}
