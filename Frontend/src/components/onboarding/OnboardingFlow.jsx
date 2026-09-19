@@ -6,9 +6,9 @@ import { ClayButton } from "../common/ClayButton";
 import { ClayCard } from "../common/ClayCard";
 import { ClayDatePicker } from "../common/ClayDatePicker";
 
-export function OnboardingFlow({ onComplete, initialEmail = "", theme, onThemeChange }) {
+export function OnboardingFlow({ onComplete, initialEmail = "", initialName = "", theme, onThemeChange }) {
   const [step, setStep] = useState(0); // 0: Name, 1: Birthday, 2: Theme, 3: Currency, 4: Avatar, 5: All Set
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName || "");
   const [birthday, setBirthday] = useState("2000-01-15");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState(theme.mode || "light");

@@ -112,25 +112,25 @@ export default function App() {
         return;
       }
       if (firebaseUser) {
+        const isGoogle = Boolean(
+          firebaseUser.providerData?.some((p) => p.providerId === "google.com")
+        );
         const sessionData = {
           uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName,
-          authType: "google",
+          email: firebaseUser.email || "",
+          displayName: firebaseUser.displayName || "",
+          authType: isGoogle ? "google" : "email",
           loggedInAt: new Date().toISOString(),
         };
         saveAuthSession(sessionData);
-        setAuthSession(sessionData);
+        setAuthSession((current) => ({
+          ...(current || {}),
+          ...sessionData,
+        }));
       } else {
-        // Real sign-out — but only drop Firebase-derived sessions; the legacy
-        // local-only flow is untouched until backend integration migrates it.
-        setAuthSession((current) => {
-          if (current?.authType === "google") {
-            clearAuthSession();
-            return null;
-          }
-          return current;
-        });
+        // Real sign-out: clear the authenticated session
+        clearAuthSession();
+        setAuthSession(null);
       }
     });
     return unsubscribe;
@@ -160,7 +160,7 @@ export default function App() {
   // truth for the same group. Pre-Firebase local sessions are not synced.
   useEffect(() => {
     if (!firebaseReady) return;
-    if (!authSession || authSession.authType !== "google") return;
+    if (!authSession || !authSession.uid) return;
     let cancelled = false;
     setGroupsSyncState("loading");
     (async () => {
@@ -247,30 +247,41 @@ export default function App() {
 
   const handleAuthenticate = (authData) => {
     setAuthEmail(authData.email);
-    const sessionData = { email: authData.email, authType: authData.authType, loggedInAt: new Date().toISOString() };
+    const sessionData = {
+      uid: authData.uid || authSession?.uid,
+      email: authData.email,
+      displayName: authData.displayName || authData.nameFromGoogle || authSession?.displayName || "",
+      authType: authData.authType || authSession?.authType || "email",
+      loggedInAt: new Date().toISOString(),
+    };
+
+    saveAuthSession(sessionData);
+    setAuthSession(sessionData);
 
     // Check if existing profile is already completed
     if (profile && profile.profileCompleted) {
-      saveAuthSession(sessionData);
-      setAuthSession(sessionData);
       showToast({ message: `Welcome back, ${profile.name.split(" ")[0]}!`, type: "success" });
-    } else {
-      // Need profile creation
-      setAuthSession(sessionData);
     }
   };
 
   const handleCompleteProfile = (newProfile) => {
     const fullProfile = {
       ...newProfile,
-      email: authEmail || newProfile.email || "user@splitzy.app",
+      email: authEmail || authSession?.email || newProfile.email || "user@splitzy.app",
       profileCompleted: true,
     };
 
     setProfile(fullProfile);
     saveProfile(fullProfile);
-    saveAuthSession({ email: fullProfile.email, loggedInAt: new Date().toISOString() });
-    setAuthSession({ email: fullProfile.email });
+
+    const updatedSession = {
+      ...(authSession || {}),
+      email: fullProfile.email,
+      displayName: fullProfile.name,
+      loggedInAt: new Date().toISOString(),
+    };
+    saveAuthSession(updatedSession);
+    setAuthSession(updatedSession);
 
     const initialGroups = loadGroups(fullProfile.name, fullProfile.homeCurrency);
     setGroups(initialGroups);
@@ -473,6 +484,7 @@ export default function App() {
           <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
           <OnboardingFlow
             initialEmail={authSession.email}
+            initialName={authSession.displayName || ""}
             onComplete={handleCompleteProfile}
             theme={theme}
             onThemeChange={handleThemeChange}

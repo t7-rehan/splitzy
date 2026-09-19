@@ -13,14 +13,34 @@
 import { setApiTokenProvider } from "./apiClient.js";
 
 let googleProvider = null;
+let testAuth = null;
+let testAuthModule = null;
+
+/** Test hook: inject mock auth and auth module so unit tests can run in plain Node */
+export function setFirebaseAuthForTests(auth, authModule = null) {
+  testAuth = auth;
+  testAuthModule = authModule;
+}
+
+export function resetFirebaseAuthForTests() {
+  testAuth = null;
+  testAuthModule = null;
+  googleProvider = null;
+}
 
 async function getFirebaseAuth() {
+  if (testAuth) return testAuth;
   return (await import("../lib/firebase")).getFirebaseAuth();
+}
+
+async function getAuthModule() {
+  if (testAuthModule) return testAuthModule;
+  return import("firebase/auth");
 }
 
 async function getGoogleProvider() {
   if (googleProvider) return googleProvider;
-  const { GoogleAuthProvider } = await import("firebase/auth");
+  const { GoogleAuthProvider } = await getAuthModule();
   googleProvider = new GoogleAuthProvider();
   googleProvider.setCustomParameters({ prompt: "select_account" });
   return googleProvider;
@@ -30,18 +50,25 @@ async function getGoogleProvider() {
 export function mapAuthError(error) {
   const code = error?.code || "";
   const messages = {
+    "auth/invalid-email": "Please enter a valid email address.",
+    "auth/user-not-found": "No account was found with this email.",
+    "auth/wrong-password": "Incorrect email or password.",
+    "auth/invalid-credential": "Incorrect email or password.",
+    "auth/email-already-in-use": "An account with this email already exists. Try signing in instead.",
+    "auth/weak-password": "Password must be at least 6 characters.",
+    "auth/password-does-not-meet-requirements": "Password does not meet the security requirements.",
+    "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
+    "auth/network-request-failed": "Network problem. Check your connection and try again.",
     "auth/popup-closed-by-user": "Sign-in was cancelled.",
     "auth/cancelled-popup-request": "Sign-in was cancelled.",
-    "auth/popup-blocked": "Your browser blocked the Google sign-in window. Allow popups and try again.",
-    "auth/operation-not-allowed": "Google sign-in is not enabled for this project yet.",
+    "auth/popup-blocked": "Your browser blocked the sign-in window. Allow popups and try again.",
+    "auth/operation-not-allowed": "This sign-in method is not enabled for this project yet.",
     "auth/unauthorized-domain": "This domain isn't authorized for sign-in. Add it in Firebase Authentication settings.",
-    "auth/network-request-failed": "Network problem. Check your connection and try again.",
-    "auth/too-many-requests": "Too many attempts. Please wait a moment and try again.",
-    "auth/internal-error": "Google sign-in hit an unexpected error. Please try again.",
-    "auth/missing-config": "Google sign-in isn't configured yet. Add your Firebase project settings to Frontend/.env.local (the placeholder list is in that file).",
+    "auth/internal-error": "An unexpected authentication error occurred. Please try again.",
+    "auth/missing-config": "Authentication isn't configured yet. Add your Firebase project settings to Frontend/.env.local (the placeholder list is in that file).",
   };
   if (messages[code]) return messages[code];
-  if (code.startsWith("auth/")) return "Could not sign in with Google. Please try again.";
+  if (code.startsWith("auth/")) return "Authentication failed. Please check your details and try again.";
   // Non-Firebase errors (or unknown codes) never leak their internals to the UI.
   return "Something went wrong while signing in. Please try again.";
 }
@@ -58,12 +85,55 @@ function toAppUser(user) {
 }
 
 /**
+ * Creates a new user with email and password via Firebase Auth.
+ * If displayName is provided, updates the user profile before resolving.
+ * Resolves with the normalized app user { uid, email, displayName, photoURL }.
+ */
+export async function signUpWithEmail(email, password, displayName = "") {
+  const { createUserWithEmailAndPassword, updateProfile } = await getAuthModule();
+  const auth = await getFirebaseAuth();
+  const credential = await createUserWithEmailAndPassword(auth, email, password);
+  const trimmedName = typeof displayName === "string" ? displayName.trim() : "";
+  if (trimmedName && credential.user) {
+    try {
+      await updateProfile(credential.user, { displayName: trimmedName });
+      credential.user.displayName = trimmedName;
+    } catch {
+      // Non-fatal: user account is created, profile name can still be set during onboarding
+    }
+  }
+  return toAppUser(credential.user);
+}
+
+/**
+ * Signs in an existing user with email and password via Firebase Auth.
+ * Resolves with the normalized app user { uid, email, displayName, photoURL }.
+ */
+export async function signInWithEmail(email, password) {
+  const { signInWithEmailAndPassword } = await getAuthModule();
+  const auth = await getFirebaseAuth();
+  const credential = await signInWithEmailAndPassword(auth, email, password);
+  return toAppUser(credential.user);
+}
+
+/**
+ * Sends a password reset email via Firebase Auth.
+ * Resolves with { success: true } without exposing Firebase internals.
+ */
+export async function resetPassword(email) {
+  const { sendPasswordResetEmail } = await getAuthModule();
+  const auth = await getFirebaseAuth();
+  await sendPasswordResetEmail(auth, email);
+  return { success: true };
+}
+
+/**
  * Opens the Google sign-in popup and resolves with the app user.
  * Environments without popup support (embedded webviews, future Android
  * WebView packaging) automatically fall back to a full-page redirect.
  */
 export async function signInWithGoogle() {
-  const { signInWithPopup } = await import("firebase/auth");
+  const { signInWithPopup } = await getAuthModule();
   const auth = await getFirebaseAuth();
   const provider = await getGoogleProvider();
   try {
@@ -82,7 +152,7 @@ export async function signInWithGoogle() {
 
 /** Redirect-based Google sign-in fallback. Resolves with { redirecting: true }. */
 export async function signInWithGoogleRedirect() {
-  const { signInWithRedirect } = await import("firebase/auth");
+  const { signInWithRedirect } = await getAuthModule();
   const auth = await getFirebaseAuth();
   const provider = await getGoogleProvider();
   await signInWithRedirect(auth, provider);
@@ -95,7 +165,7 @@ export async function signInWithGoogleRedirect() {
  */
 export async function signOut() {
   try {
-    const { signOut: firebaseSignOut } = await import("firebase/auth");
+    const { signOut: firebaseSignOut } = await getAuthModule();
     const auth = await getFirebaseAuth();
     await firebaseSignOut(auth);
   } catch {
@@ -140,7 +210,7 @@ export function subscribeToAuthState(callback) {
 
   (async () => {
     try {
-      const { onAuthStateChanged } = await import("firebase/auth");
+      const { onAuthStateChanged } = await getAuthModule();
       const auth = await getFirebaseAuth();
       if (disposed) return;
       unsubscribe = onAuthStateChanged(auth, callback);
