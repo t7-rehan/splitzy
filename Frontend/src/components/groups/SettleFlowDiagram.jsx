@@ -11,7 +11,8 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
   const [showShare, setShowShare] = useState(false);
 
   const nameOf = (id) => members.find((m) => m.id === id)?.name || "?";
-  const upiOf = (id) => members.find((m) => m.id === id)?.upi || `${nameOf(id).toLowerCase()}@upi`;
+  const memberById = (id) => members.find((m) => m.id === id) || null;
+  const upiOf = (id) => memberById(id)?.upiId || memberById(id)?.upi || null;
 
   const buildShareSummary = () => {
     const lines = [`📌 ${settlements.length ? "Settlement Summary" : "All Settled Up"} — Splitzy`, ""];
@@ -175,6 +176,9 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
           const isYouDebtor = s.from === "you";
           const isYouCreditor = s.to === "you";
           const isBusy = busyKey === `${s.from}>${s.to}`;
+          const settlementLabel = isYouDebtor
+            ? `You owe ${toName} ${fmtMoney(s.amount, currency)}`
+            : `${fromName} owes ${isYouCreditor ? "you" : toName} ${fmtMoney(s.amount, currency)}`;
 
           return (
             <div
@@ -190,14 +194,13 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                 gap: "8px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: "13.5px", fontWeight: "700", color: C.text }}>
-                  {isYouDebtor ? "You" : fromName}
-                </span>
-                <ArrowRight size={14} color={C.muted} />
-                <span style={{ fontSize: "13.5px", fontWeight: "700", color: C.text }}>
-                  {isYouCreditor ? "You" : toName}
-                </span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "12px", fontWeight: "700", color: C.text }}>
+                  {settlementLabel}
+                </div>
+                <div style={{ fontSize: "11px", color: C.muted }}>
+                  {isYouDebtor ? "Debtor: you" : `Debtor: ${fromName}`} • {isYouCreditor ? "Creditor: you" : `Creditor: ${toName}`}
+                </div>
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -208,7 +211,18 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                 {/* UPI Pay CTA if debt is in INR */}
                 {currency === "INR" && (
                   <button
-                    onClick={() => onOpenUPI({ payeeName: toName, payeeUpi: upiOf(s.to), amount: s.amount })}
+                    onClick={() => {
+                      const creditor = memberById(s.to);
+                      const creditorName = isYouCreditor ? "You" : toName;
+                      const creditorUpi = upiOf(s.to);
+                      onOpenUPI({
+                        payeeName: creditorName,
+                        payeeUpi: creditorUpi || "",
+                        amount: s.amount,
+                        note: `Settlement payment to ${creditorName}`,
+                        missingUpi: !creditorUpi,
+                      });
+                    }}
                     style={{
                       padding: "6px 10px",
                       borderRadius: "10px",
@@ -223,7 +237,7 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                       gap: "4px",
                     }}
                   >
-                    <QrCode size={12} /> Pay UPI
+                    <QrCode size={12} /> Pay ₹{s.amount}
                   </button>
                 )}
 

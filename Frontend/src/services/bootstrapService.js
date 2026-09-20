@@ -13,7 +13,7 @@
  * between the two; it is never used as a credential (the Firebase ID token is).
  */
 
-import { apiGet } from "./apiClient.js";
+import { apiGet, apiPatch } from "./apiClient.js";
 
 /** Safe public projection returned by GET /auth/me (Task 4 contract). */
 export function mapUserFromApi(payload) {
@@ -24,6 +24,10 @@ export function mapUserFromApi(payload) {
     email: payload.email,
     displayName: payload.displayName,
     photoUrl: payload.photoUrl ?? null,
+    birthdate: payload.birthdate ?? null,
+    profileCompleted: Boolean(payload.profileCompleted),
+    upiId: payload.upiId ?? null,
+    upiQrDataUrl: payload.upiQrDataUrl ?? null,
   };
 }
 
@@ -38,4 +42,20 @@ export async function fetchBackendUser() {
     throw new Error("Malformed user payload from server");
   }
   return user;
+}
+
+export async function saveBackendProfile(profilePatch = {}) {
+  const payload = {};
+  if (profilePatch.name !== undefined) payload.name = profilePatch.name;
+  if (profilePatch.birthdate !== undefined) payload.birthdate = profilePatch.birthdate;
+  if (profilePatch.avatarId !== undefined) payload.avatarId = profilePatch.avatarId;
+  if (profilePatch.homeCurrency !== undefined) payload.currencyCode = profilePatch.homeCurrency;
+  if (profilePatch.theme !== undefined) payload.theme = profilePatch.theme;
+  if (profilePatch.upiId !== undefined) payload.upiId = profilePatch.upiId;
+  if (profilePatch.upiQrDataUrl !== undefined) payload.upiQrDataUrl = profilePatch.upiQrDataUrl;
+  if (Object.keys(payload).length === 0) {
+    return fetchBackendUser();
+  }
+  const data = await apiPatch("/api/v1/auth/me", payload);
+  return mapUserFromApi(data);
 }

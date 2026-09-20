@@ -41,6 +41,10 @@ interface MeBody {
     email: string;
     displayName: string;
     photoUrl: string | null;
+    birthdate: string | null;
+    profileCompleted: boolean;
+    upiId: string | null;
+    upiQrDataUrl: string | null;
   };
 }
 
@@ -75,9 +79,12 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
         email: data.email,
         name: data.name,
         photoUrl: data.photoUrl ?? null,
+        birthdate: null,
         avatarId: null,
         currencyCode: 'INR',
         timezone: 'UTC',
+        upiId: null,
+        upiQrDataUrl: null,
         createdAt: now(),
         updatedAt: now(),
       };
@@ -90,6 +97,9 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
       if (data.email !== undefined) row.email = data.email;
       if (data.name !== undefined) row.name = data.name;
       if (data.photoUrl !== undefined) row.photoUrl = data.photoUrl;
+      if (data.birthdate !== undefined) row.birthdate = data.birthdate as Date | null;
+      if (data.upiId !== undefined) row.upiId = data.upiId as string | null;
+      if (data.upiQrDataUrl !== undefined) row.upiQrDataUrl = data.upiQrDataUrl as string | null;
       row.updatedAt = now();
       return row;
     },
@@ -293,13 +303,21 @@ describe('Authentication foundation (Task 4)', () => {
       email: body.data.email,
       displayName: body.data.displayName,
       photoUrl: null,
+      birthdate: null,
+      profileCompleted: false,
+      upiId: null,
+      upiQrDataUrl: null,
     });
     assert.deepEqual(Object.keys(body.data).sort(), [
+      'birthdate',
       'displayName',
       'email',
       'firebaseUid',
       'id',
       'photoUrl',
+      'profileCompleted',
+      'upiId',
+      'upiQrDataUrl',
     ]);
     const serialized = JSON.stringify(body).toLowerCase();
     for (const forbidden of ['token', 'secret', 'credential', 'password']) {
@@ -314,18 +332,25 @@ describe('Authentication foundation (Task 4)', () => {
       email: 'e@x.com',
       name: 'N',
       photoUrl: null,
+      birthdate: null,
       avatarId: null,
       currencyCode: 'INR',
       timezone: 'UTC',
+      upiId: null,
+      upiQrDataUrl: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
     assert.deepEqual(Object.keys(publicUser).sort(), [
+      'birthdate',
       'displayName',
       'email',
       'firebaseUid',
       'id',
       'photoUrl',
+      'profileCompleted',
+      'upiId',
+      'upiQrDataUrl',
     ]);
   });
 });

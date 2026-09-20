@@ -37,6 +37,8 @@ export interface PublicMember {
   avatarId: string | null;
   role: GroupRole;
   joinedAt: string;
+  upiId: string | null;
+  upiQrDataUrl: string | null;
 }
 
 /** Group details (single-group view). */

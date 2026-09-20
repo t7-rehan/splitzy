@@ -1,6 +1,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError, ErrorCodes } from '../utils/appError.js';
-import { findOrProvisionUser, toPublicUser } from '../services/currentUserService.js';
+import {
+  findOrProvisionUser,
+  updateCurrentUserProfile,
+  toPublicUser,
+} from '../services/currentUserService.js';
 import type { ApiSuccessBody } from '../types/api.js';
 import type { PublicUser } from '../types/auth.js';
 
@@ -21,6 +25,27 @@ export async function getMe(
       throw new AppError(ErrorCodes.UNAUTHORIZED);
     }
     const user = await findOrProvisionUser(identity);
+    const body: ApiSuccessBody<PublicUser> = {
+      success: true,
+      data: toPublicUser(user),
+    };
+    res.status(200).json(body);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateMe(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const identity = req.auth;
+    if (!identity) {
+      throw new AppError(ErrorCodes.UNAUTHORIZED);
+    }
+    const user = await updateCurrentUserProfile(identity, req.body ?? {});
     const body: ApiSuccessBody<PublicUser> = {
       success: true,
       data: toPublicUser(user),

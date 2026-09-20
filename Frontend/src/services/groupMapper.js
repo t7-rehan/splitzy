@@ -86,9 +86,9 @@ export function mapMembersFromApi(dto, myUserId) {
       id: memberId,
       name,
       role: m.role || "MEMBER",
-      // Server user id (additive, Task 9): lets the expense payload builders
-      // translate the viewer's "you" member id into the API's paidByUserId.
       userId: m.userId || null,
+      upiId: m.upiId || null,
+      upiQrDataUrl: m.upiQrDataUrl || null,
     };
   });
 }

@@ -31,6 +31,10 @@ export interface PublicUser {
   email: string;
   displayName: string;
   photoUrl: string | null;
+  birthdate: string | null;
+  profileCompleted: boolean;
+  upiId: string | null;
+  upiQrDataUrl: string | null;
 }
 
 /**

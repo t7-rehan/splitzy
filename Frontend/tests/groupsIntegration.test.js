@@ -95,6 +95,10 @@ describe("auth bootstrap", () => {
       email: "x@y.z",
       displayName: "X",
       photoUrl: null,
+      birthdate: null,
+      profileCompleted: false,
+      upiId: null,
+      upiQrDataUrl: null,
       secretField: "nope",
     });
     assert.deepEqual(mapped, {
@@ -103,6 +107,10 @@ describe("auth bootstrap", () => {
       email: "x@y.z",
       displayName: "X",
       photoUrl: null,
+      birthdate: null,
+      profileCompleted: false,
+      upiId: null,
+      upiQrDataUrl: null,
     });
     assert.ok(!("secretField" in mapped));
   });

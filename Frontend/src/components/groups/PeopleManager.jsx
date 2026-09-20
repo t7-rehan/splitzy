@@ -193,7 +193,11 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
                     {(m?.name?.trim()?.charAt(0) || "M").toUpperCase()}
                   </div>
                   <span style={{ fontSize: "13px", fontWeight: "600", color: theme.text }}>
-                    {m.name} {isYou && <span style={{ color: theme.muted, fontWeight: "500" }}>(You)</span>}
+                    {m.name}
+                    {isYou && <span style={{ color: theme.muted, fontWeight: "500" }}> • You</span>}
+                  </span>
+                  <span style={{ fontSize: "10px", color: theme.muted, fontWeight: "700", textTransform: "uppercase" }}>
+                    {isYou ? "Admin" : (m.role || "Member")}
                   </span>
 
                   {!isYou && (

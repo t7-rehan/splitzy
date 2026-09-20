@@ -93,21 +93,26 @@ enum RecurringFrequency {
 ///   email       — unique for data integrity, but NOT the identity key.
 /// No password/credential columns exist or are needed.
 model User {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Firebase Authentication UID of this account (unique identity key).
-  firebaseUid  String   @unique
-  email        String   @unique
+  firebaseUid  String    @unique
+  email        String    @unique
   name         String
+  birthdate    DateTime?
   /// Profile photo URL from the verified identity provider (Google).
   photoUrl     String?
   /// Frontend avatar token (e.g. "avatar_cool"). Nullable until onboarding.
   avatarId     String?
   /// Preferred display currency (ISO 4217, e.g. INR).
-  currencyCode String   @default("INR") @db.Char(3)
+  currencyCode String    @default("INR") @db.Char(3)
   /// IANA timezone for date grouping (calendar, monthly insights).
-  timezone     String   @default("UTC")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  timezone     String    @default("UTC")
+  /// Saved UPI ID for settlement payments.
+  upiId        String?
+  /// Optional saved QR reference; do not store unnecessary raw sensitive data.
+  upiQrDataUrl String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   ownedGroups              Group[]                       @relation("GroupCreatedBy")
   memberships              GroupMember[]

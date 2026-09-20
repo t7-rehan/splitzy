@@ -19,7 +19,7 @@ import {
   subscribeToAuthState,
   signOut as firebaseSignOut,
 } from "./services/authService";
-import { fetchBackendUser } from "./services/bootstrapService";
+import { fetchBackendUser, saveBackendProfile } from "./services/bootstrapService";
 import {
   fetchMyGroups,
   fetchGroupDetails,
@@ -85,6 +85,7 @@ export default function App() {
   //   syncNonce       — bump to retry a failed sync.
   //   creatingGroup   — guards double-submits of server group creation.
   const [backendUser, setBackendUser] = useState(null);
+  const [userProfileReady, setUserProfileReady] = useState(false);
   const [groupsSyncState, setGroupsSyncState] = useState("idle");
   // The sync failure's user-safe message — the Groups screen banner shows the
   // REAL cause (network vs HTTP error) instead of a hardcoded network text.
@@ -119,6 +120,10 @@ export default function App() {
   const [toast, setToast] = useState(null);
 
   const theme = getThemeTokens(themeMode);
+  const authSessionRef = useRef(authSession);
+  useEffect(() => {
+    authSessionRef.current = authSession;
+  }, [authSession]);
 
   // Latest-groups mirror for async flows that must read current state without
   // re-running (the groups sync reads it right before committing its result).
@@ -148,6 +153,8 @@ export default function App() {
           authType: "google",
           loggedInAt: new Date().toISOString(),
         };
+        setUserProfileReady(false);
+        const previousUid = authSessionRef.current?.uid;
         saveAuthSession(sessionData);
         setAuthSession((prev) => {
           if (prev?.uid && prev.uid !== firebaseUser.uid) {
@@ -157,7 +164,10 @@ export default function App() {
           return sessionData;
         });
 
-        // Load profile scoped to this user
+        if (previousUid && previousUid !== firebaseUser.uid) {
+          clearUserCache(previousUid);
+        }
+
         let userProfile = loadProfile(firebaseUser.uid);
         if (!userProfile) {
           userProfile = {
@@ -171,7 +181,6 @@ export default function App() {
         }
         setProfile(userProfile);
 
-        // Load groups scoped to this user (returns [] for brand new user!)
         const userGroups = loadGroups(firebaseUser.uid);
         setGroups(userGroups);
       } else {
@@ -179,6 +188,7 @@ export default function App() {
         setAuthSession((current) => {
           if (current?.authType === "google") {
             clearAuthSession();
+            setUserProfileReady(false);
             setBackendUser(null);
             setGroups([]);
             setProfile(null);
@@ -227,6 +237,29 @@ export default function App() {
         const user = await fetchBackendUser();
         if (cancelled) return;
         setBackendUser(user);
+
+        const mergedProfile = {
+          id: user.id,
+          email: user.email,
+          name: user.displayName || "Splitzy User",
+          birthdate: user.birthdate || null,
+          profileCompleted: Boolean(user.profileCompleted),
+          photoUrl: user.photoUrl || null,
+          homeCurrency: "INR",
+          theme: profile?.theme || "light",
+          isPro: Boolean(profile?.isPro),
+          avatarId: profile?.avatarId || "avatar_cool",
+          upiId: user.upiId || null,
+          upiQrDataUrl: user.upiQrDataUrl || null,
+        };
+        setProfile((current) => ({
+          ...current,
+          ...mergedProfile,
+          profileCompleted: Boolean(user.profileCompleted),
+        }));
+        saveProfile(mergedProfile, authSession.uid);
+        setUserProfileReady(true);
+
         const summaries = await fetchMyGroups();
         if (cancelled) return;
         // Authoritative member lists live on the detail endpoint; a detail
@@ -401,24 +434,63 @@ export default function App() {
     }
   };
 
-  const handleCompleteProfile = (newProfile) => {
+  const handleCompleteProfile = async (newProfile) => {
     const fullProfile = {
       ...newProfile,
       email: authEmail || newProfile.email || "user@splitzy.app",
+      birthdate: newProfile.birthdate || newProfile.birthday || null,
       profileCompleted: true,
     };
 
-    setProfile(fullProfile);
-    if (authSession?.uid) {
-      saveProfile(fullProfile, authSession.uid);
+    try {
+      const saved = await saveBackendProfile({
+        name: fullProfile.name,
+        birthdate: fullProfile.birthdate,
+        avatarId: fullProfile.avatarId,
+        homeCurrency: fullProfile.homeCurrency,
+        theme: fullProfile.theme,
+        upiId: fullProfile.upiId || null,
+        upiQrDataUrl: fullProfile.upiQrDataUrl || null,
+      });
+      const backendProfile = {
+        ...fullProfile,
+        ...saved,
+        birthdate: saved?.birthdate || fullProfile.birthdate || null,
+        profileCompleted: Boolean(saved?.profileCompleted),
+      };
+      setBackendUser(backendProfile);
+      setProfile(backendProfile);
+      saveProfile(backendProfile, authSession?.uid);
+    } catch (error) {
+      setProfile(fullProfile);
+      saveProfile(fullProfile, authSession?.uid);
+      showToast({ message: "Profile saved locally. Please refresh if the server is busy.", type: "info" });
     }
     showToast({ message: `Welcome to Splitzy, ${fullProfile.name.split(" ")[0]}!`, type: "success" });
   };
 
-  const handleUpdateProfile = (updatedProfile) => {
-    setProfile(updatedProfile);
-    if (authSession?.uid) {
-      saveProfile(updatedProfile, authSession.uid);
+  const handleUpdateProfile = async (updatedProfile) => {
+    const next = {
+      ...updatedProfile,
+      birthdate: updatedProfile.birthdate || updatedProfile.birthday || null,
+      profileCompleted: true,
+    };
+    try {
+      const saved = await saveBackendProfile({
+        name: next.name,
+        birthdate: next.birthdate,
+        avatarId: next.avatarId,
+        homeCurrency: next.homeCurrency,
+        theme: next.theme,
+        upiId: next.upiId || null,
+      });
+      const merged = { ...next, ...saved, birthdate: saved?.birthdate || next.birthdate || null };
+      setBackendUser(merged);
+      setProfile(merged);
+      saveProfile(merged, authSession?.uid);
+    } catch {
+      setProfile(next);
+      saveProfile(next, authSession?.uid);
     }
     showToast({ message: "Profile updated successfully", type: "success" });
   };
@@ -762,8 +834,21 @@ export default function App() {
     );
   }
 
+  if (authSession && !backendUser && !userProfileReady) {
+    return (
+      <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
+        <MobileContainer>
+          <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
+          <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: theme.text, fontWeight: 700 }}>
+            Loading your profile…
+          </div>
+        </MobileContainer>
+      </ThemeProvider>
+    );
+  }
+
   // 2. If authenticated but profile is not completed: Show Create Your Profile flow
-  if (!profile || !profile.profileCompleted) {
+  if (authSession && backendUser && !backendUser.profileCompleted) {
     return (
       <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
         <MobileContainer>

@@ -388,7 +388,7 @@ export function validateRoleInput(value: unknown): 'ADMIN' | 'MEMBER' {
 
 export function toPublicMember(
   member: Pick<GroupMember, 'userId' | 'role' | 'joinedAt'>,
-  user: Pick<User, 'name' | 'avatarId'> | null,
+  user: Pick<User, 'name' | 'avatarId' | 'upiId' | 'upiQrDataUrl'> | null,
 ): PublicMember {
   return {
     userId: member.userId,
@@ -396,6 +396,8 @@ export function toPublicMember(
     avatarId: user?.avatarId ?? null,
     role: member.role,
     joinedAt: member.joinedAt.toISOString(),
+    upiId: user?.upiId ?? null,
+    upiQrDataUrl: user?.upiQrDataUrl ?? null,
   };
 }
 

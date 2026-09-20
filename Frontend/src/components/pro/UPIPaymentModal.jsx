@@ -66,6 +66,7 @@ export function UPIPaymentModal({
   const numericAmount = parseFloat(amount);
   const hasValidAmount = !Number.isNaN(numericAmount) && numericAmount > 0;
   const hasPayee = Boolean(payeeUpi && payeeUpi.includes("@"));
+  const noUpiAvailable = isOpen && payeeDetails && !payeeUpi && payeeDetails.missingUpi;
 
   // Build standard canonical UPI deep link
   let upiDeepLink = "";
@@ -310,7 +311,26 @@ export function UPIPaymentModal({
         </div>
 
         {/* UPI Details Box */}
-        {hasPayee ? (
+        {noUpiAvailable ? (
+          <div
+            style={{
+              padding: "18px 14px",
+              textAlign: "center",
+              borderRadius: "16px",
+              backgroundColor: C.bg,
+              boxShadow: C.clayPressed,
+              marginBottom: "16px",
+            }}
+          >
+            <QrCode size={36} color={C.muted} style={{ margin: "0 auto 8px" }} />
+            <div style={{ fontSize: "13px", fontWeight: "700", color: C.text }}>
+              Payment details not available
+            </div>
+            <div style={{ fontSize: "11.5px", color: C.muted, marginTop: "4px" }}>
+              {payeeName || "This user"} has not saved a UPI ID or QR yet.
+            </div>
+          </div>
+        ) : hasPayee ? (
           <div
             style={{
               backgroundColor: C.bg,

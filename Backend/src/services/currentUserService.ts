@@ -30,6 +30,9 @@ export interface UserRepository {
       email: string;
       name: string;
       photoUrl?: string | null;
+      birthdate?: Date | string | null;
+      upiId?: string | null;
+      upiQrDataUrl?: string | null;
     };
   }): Promise<User>;
   update(args: {
@@ -38,6 +41,12 @@ export interface UserRepository {
       email?: string;
       name?: string;
       photoUrl?: string;
+      birthdate?: Date | string | null;
+      avatarId?: string | null;
+      currencyCode?: string;
+      timezone?: string;
+      upiId?: string | null;
+      upiQrDataUrl?: string | null;
     };
   }): Promise<User>;
 }
@@ -86,6 +95,25 @@ function isUniqueConstraintViolation(error: unknown): boolean {
  * Find the Splitzy User for a verified identity, provisioning one on first
  * login. Returns the internal PostgreSQL User record.
  */
+function normalizeBirthdate(value: unknown): Date | null | undefined {
+  if (value === undefined || value === null || value === '') {
+    return value === undefined ? undefined : null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const date = new Date(trimmed);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error('birthdate must be a valid ISO date string');
+    }
+    return date;
+  }
+  throw new Error('birthdate must be a valid ISO date string');
+}
+
 export async function findOrProvisionUser(
   identity: VerifiedIdentity,
 ): Promise<User> {
@@ -146,12 +174,65 @@ export async function findOrProvisionUser(
 }
 
 /** Safe client-facing projection — contains no credentials or tokens. */
+export async function updateCurrentUserProfile(
+  identity: VerifiedIdentity,
+  patch: Record<string, unknown>,
+): Promise<User> {
+  const repo = repository();
+  const existing = await repo.findUnique({
+    where: { firebaseUid: identity.firebaseUid },
+  });
+  if (!existing) {
+    throw new Error('User not found');
+  }
+
+  const nextName = typeof patch.name === 'string' ? patch.name.trim() : undefined;
+  const nextBirthdate = 'birthdate' in patch ? normalizeBirthdate(patch.birthdate) : undefined;
+  const nextAvatarId = typeof patch.avatarId === 'string' ? patch.avatarId : undefined;
+  const nextCurrencyCode = typeof patch.currencyCode === 'string' ? patch.currencyCode : undefined;
+  const nextTimezone = typeof patch.timezone === 'string' ? patch.timezone : undefined;
+  const nextUpiId = typeof patch.upiId === 'string' ? patch.upiId.trim() || null : undefined;
+  const nextUpiQrDataUrl = typeof patch.upiQrDataUrl === 'string' ? patch.upiQrDataUrl.trim() || null : undefined;
+
+  const data: Record<string, unknown> = {};
+  if (nextName !== undefined && nextName.length > 0) data.name = nextName;
+  if (nextBirthdate !== undefined) data.birthdate = nextBirthdate;
+  if (nextAvatarId !== undefined) data.avatarId = nextAvatarId;
+  if (nextCurrencyCode !== undefined) data.currencyCode = nextCurrencyCode;
+  if (nextTimezone !== undefined) data.timezone = nextTimezone;
+  if (nextUpiId !== undefined) data.upiId = nextUpiId;
+  if (nextUpiQrDataUrl !== undefined) data.upiQrDataUrl = nextUpiQrDataUrl;
+
+  if (Object.keys(data).length === 0) {
+    return existing;
+  }
+
+  return repo.update({
+    where: { firebaseUid: identity.firebaseUid },
+    data: data as {
+      email?: string;
+      name?: string;
+      photoUrl?: string;
+      birthdate?: Date | string | null;
+      upiId?: string | null;
+      upiQrDataUrl?: string | null;
+      avatarId?: string | null;
+      currencyCode?: string;
+      timezone?: string;
+    },
+  });
+}
+
 export function toPublicUser(user: User): {
   id: string;
   firebaseUid: string;
   email: string;
   displayName: string;
   photoUrl: string | null;
+  birthdate: string | null;
+  profileCompleted: boolean;
+  upiId: string | null;
+  upiQrDataUrl: string | null;
 } {
   return {
     id: user.id,
@@ -159,5 +240,9 @@ export function toPublicUser(user: User): {
     email: user.email,
     displayName: user.name,
     photoUrl: user.photoUrl,
+    birthdate: user.birthdate ? user.birthdate.toISOString() : null,
+    profileCompleted: Boolean(user.name && user.birthdate),
+    upiId: user.upiId ?? null,
+    upiQrDataUrl: user.upiQrDataUrl ?? null,
   };
 }
