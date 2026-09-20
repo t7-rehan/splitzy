@@ -18,17 +18,19 @@
  * simply re-reads the winner's row. No duplicates are possible.
  */
 import type { User } from '@prisma/client';
+import { AppError, ErrorCodes } from '../utils/appError.js';
 import { getPrismaClient } from './db.js';
 import type { VerifiedIdentity } from '../types/auth.js';
 
 /** Minimal repository surface the service needs — swappable in tests. */
 export interface UserRepository {
-  findUnique(args: { where: { firebaseUid: string } }): Promise<User | null>;
+  findUnique(args: { where: { firebaseUid?: string; username?: string } }): Promise<User | null>;
   create(args: {
     data: {
       firebaseUid: string;
       email: string;
       name: string;
+      username?: string | null;
       photoUrl?: string | null;
       birthdate?: Date | string | null;
       upiId?: string | null;
@@ -40,6 +42,7 @@ export interface UserRepository {
     data: {
       email?: string;
       name?: string;
+      username?: string | null;
       photoUrl?: string;
       birthdate?: Date | string | null;
       avatarId?: string | null;
@@ -56,7 +59,12 @@ const globalForUserRepo = globalThis as unknown as {
 };
 
 function defaultRepository(): UserRepository {
-  return getPrismaClient().user;
+  const user = getPrismaClient().user;
+  return {
+    findUnique: ({ where }) => user.findUnique({ where: where as any }),
+    create: (args) => user.create(args),
+    update: (args) => user.update(args),
+  };
 }
 
 /** Test hook: substitute an in-memory repository so tests need no database. */
@@ -70,6 +78,25 @@ export function resetUserRepositoryForTests(): void {
 
 function repository(): UserRepository {
   return globalForUserRepo.splitzyUserRepository ?? defaultRepository();
+}
+
+export const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
+
+export function normalizeUsername(value: unknown): string {
+  if (typeof value !== 'string') {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, {
+      message: 'Username is required',
+      details: { username: ['Use 3-24 lowercase letters, numbers, or underscores'] },
+    });
+  }
+  const username = value.trim().replace(/^@+/, '').toLowerCase();
+  if (!USERNAME_PATTERN.test(username)) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, {
+      message: 'Username must be 3-24 characters using lowercase letters, numbers, or underscores',
+      details: { username: ['Only lowercase letters, numbers, and underscores are allowed'] },
+    });
+  }
+  return username;
 }
 
 /** Derive a non-empty display name from verified claims. */
@@ -159,6 +186,7 @@ export async function findOrProvisionUser(
         firebaseUid: identity.firebaseUid,
         email: identity.email ?? `${identity.firebaseUid}@users.splitzy.local`,
         name: displayNameFrom(identity),
+        username: null,
         photoUrl: identity.photoUrl ?? null,
       },
     });
@@ -187,6 +215,7 @@ export async function updateCurrentUserProfile(
   }
 
   const nextName = typeof patch.name === 'string' ? patch.name.trim() : undefined;
+  const nextUsername = 'username' in patch ? normalizeUsername(patch.username) : undefined;
   const nextBirthdate = 'birthdate' in patch ? normalizeBirthdate(patch.birthdate) : undefined;
   const nextAvatarId = typeof patch.avatarId === 'string' ? patch.avatarId : undefined;
   const nextCurrencyCode = typeof patch.currencyCode === 'string' ? patch.currencyCode : undefined;
@@ -196,6 +225,7 @@ export async function updateCurrentUserProfile(
 
   const data: Record<string, unknown> = {};
   if (nextName !== undefined && nextName.length > 0) data.name = nextName;
+  if (nextUsername !== undefined) data.username = nextUsername;
   if (nextBirthdate !== undefined) data.birthdate = nextBirthdate;
   if (nextAvatarId !== undefined) data.avatarId = nextAvatarId;
   if (nextCurrencyCode !== undefined) data.currencyCode = nextCurrencyCode;
@@ -207,11 +237,13 @@ export async function updateCurrentUserProfile(
     return existing;
   }
 
-  return repo.update({
-    where: { firebaseUid: identity.firebaseUid },
-    data: data as {
+  try {
+    return await repo.update({
+      where: { firebaseUid: identity.firebaseUid },
+      data: data as {
       email?: string;
       name?: string;
+      username?: string | null;
       photoUrl?: string;
       birthdate?: Date | string | null;
       upiId?: string | null;
@@ -219,15 +251,34 @@ export async function updateCurrentUserProfile(
       avatarId?: string | null;
       currencyCode?: string;
       timezone?: string;
-    },
-  });
+      },
+    });
+  } catch (error) {
+    if (isUniqueConstraintViolation(error)) {
+      throw new AppError(ErrorCodes.CONFLICT, { message: 'That username is already taken' });
+    }
+    throw error;
+  }
+}
+
+export async function findUserByUsername(value: unknown): Promise<User | null> {
+  const username = normalizeUsername(value);
+  return repository().findUnique({ where: { username } });
+}
+
+export function toPublicUserSearchResult(user: User): {
+  id: string;
+  username: string;
+  name: string;
+} {
+  return { id: user.id, username: user.username!, name: user.name };
 }
 
 export function toPublicUser(user: User): {
   id: string;
-  firebaseUid: string;
   email: string;
   displayName: string;
+  username: string | null;
   photoUrl: string | null;
   birthdate: string | null;
   profileCompleted: boolean;
@@ -236,12 +287,12 @@ export function toPublicUser(user: User): {
 } {
   return {
     id: user.id,
-    firebaseUid: user.firebaseUid,
     email: user.email,
     displayName: user.name,
+    username: user.username ?? null,
     photoUrl: user.photoUrl,
     birthdate: user.birthdate ? user.birthdate.toISOString() : null,
-    profileCompleted: Boolean(user.name && user.birthdate),
+    profileCompleted: Boolean(user.name && user.username && user.birthdate),
     upiId: user.upiId ?? null,
     upiQrDataUrl: user.upiQrDataUrl ?? null,
   };

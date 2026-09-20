@@ -98,6 +98,9 @@ model User {
   firebaseUid  String    @unique
   email        String    @unique
   name         String
+  /// Human-friendly discovery identifier. Nullable only for legacy users until
+  /// they complete the updated profile setup flow.
+  username     String?   @unique
   birthdate    DateTime?
   /// Profile photo URL from the verified identity provider (Google).
   photoUrl     String?

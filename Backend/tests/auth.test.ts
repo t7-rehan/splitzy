@@ -37,7 +37,6 @@ interface MeBody {
   success: true;
   data: {
     id: string;
-    firebaseUid: string;
     email: string;
     displayName: string;
     photoUrl: string | null;
@@ -59,7 +58,8 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
   return {
     counts,
     async findUnique({ where }) {
-      return rows.get(where.firebaseUid) ?? null;
+      if (where.firebaseUid) return rows.get(where.firebaseUid) ?? null;
+      return [...rows.values()].find((row) => row.username === where.username) ?? null;
     },
     async create({ data }) {
       // Force interleaving FIRST, then run the constraint check + insert
@@ -78,6 +78,7 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
         firebaseUid: data.firebaseUid,
         email: data.email,
         name: data.name,
+        username: data.username ?? null,
         photoUrl: data.photoUrl ?? null,
         birthdate: null,
         avatarId: null,
@@ -94,8 +95,12 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
     async update({ where, data }) {
       const row = rows.get(where.firebaseUid);
       if (!row) throw new Error('Record not found');
+      if (data.username && [...rows.values()].some((candidate) => candidate.id !== row.id && candidate.username === data.username)) {
+        throw { code: 'P2002' };
+      }
       if (data.email !== undefined) row.email = data.email;
       if (data.name !== undefined) row.name = data.name;
+      if (data.username !== undefined) row.username = data.username;
       if (data.photoUrl !== undefined) row.photoUrl = data.photoUrl;
       if (data.birthdate !== undefined) row.birthdate = data.birthdate as Date | null;
       if (data.upiId !== undefined) row.upiId = data.upiId as string | null;
@@ -168,7 +173,6 @@ describe('Authentication foundation (Task 4)', () => {
     });
     assert.equal(response.status, 200);
     const body = (await response.json()) as MeBody;
-    assert.equal(body.data.firebaseUid, 'dev-firebase-uid-1');
     // Provisioned from the dev identity alone — no email claim exists.
     assert.ok(body.data.email.endsWith('@users.splitzy.local'));
   });
@@ -216,7 +220,6 @@ describe('Authentication foundation (Task 4)', () => {
     assert.equal(response.status, 200);
     const body = (await response.json()) as MeBody;
     // Identity fields come from the VERIFIED token, not from any client header.
-    assert.equal(body.data.firebaseUid, 'firebase-uid-from-token');
     assert.equal(body.data.displayName, 'Ada Lovelace');
     assert.equal(body.data.email, 'ada@example.com');
   });
@@ -299,9 +302,9 @@ describe('Authentication foundation (Task 4)', () => {
     const body = (await response.json()) as MeBody;
     assert.deepEqual(body.data, {
       id: body.data.id,
-      firebaseUid: 'uid-privacy',
       email: body.data.email,
       displayName: body.data.displayName,
+      username: null,
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,
@@ -312,12 +315,12 @@ describe('Authentication foundation (Task 4)', () => {
       'birthdate',
       'displayName',
       'email',
-      'firebaseUid',
       'id',
       'photoUrl',
       'profileCompleted',
       'upiId',
       'upiQrDataUrl',
+      'username',
     ]);
     const serialized = JSON.stringify(body).toLowerCase();
     for (const forbidden of ['token', 'secret', 'credential', 'password']) {
@@ -331,6 +334,7 @@ describe('Authentication foundation (Task 4)', () => {
       firebaseUid: 'f1',
       email: 'e@x.com',
       name: 'N',
+      username: 'n_user',
       photoUrl: null,
       birthdate: null,
       avatarId: null,
@@ -345,12 +349,56 @@ describe('Authentication foundation (Task 4)', () => {
       'birthdate',
       'displayName',
       'email',
-      'firebaseUid',
       'id',
       'photoUrl',
       'profileCompleted',
       'upiId',
       'upiQrDataUrl',
+      'username',
     ]);
+  });
+
+  it('11. profile username is normalized and searchable without exposing Firebase UID', async () => {
+    const repo = makeFakeUserRepository();
+    setUserRepositoryForTests(repo);
+    await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { 'x-dev-user-id': 'uid-sarthak' } });
+    const update = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      method: 'PATCH',
+      headers: { 'x-dev-user-id': 'uid-sarthak', 'content-type': 'application/json' },
+      body: JSON.stringify({ username: ' @Sarthak ' }),
+    });
+    assert.equal(update.status, 200);
+    const updatedBody = (await update.json()) as MeBody;
+    assert.equal(updatedBody.data.username, 'sarthak');
+    assert.ok(!('firebaseUid' in updatedBody.data));
+
+    const lookup = await fetch(`${baseUrl}/api/v1/users/search?username=%40SARTHAK`, {
+      headers: { 'x-dev-user-id': 'uid-other' },
+    });
+    assert.equal(lookup.status, 200);
+    assert.deepEqual((await lookup.json()).data, {
+      id: updatedBody.data.id,
+      username: 'sarthak',
+      name: 'Splitzy User',
+    });
+  });
+
+  it('12. duplicate usernames are rejected', async () => {
+    const repo = makeFakeUserRepository();
+    setUserRepositoryForTests(repo);
+    await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { 'x-dev-user-id': 'uid-one' } });
+    await fetch(`${baseUrl}/api/v1/auth/me`, { headers: { 'x-dev-user-id': 'uid-two' } });
+    const first = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      method: 'PATCH',
+      headers: { 'x-dev-user-id': 'uid-one', 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'duplicate_name' }),
+    });
+    assert.equal(first.status, 200);
+    const second = await fetch(`${baseUrl}/api/v1/auth/me`, {
+      method: 'PATCH',
+      headers: { 'x-dev-user-id': 'uid-two', 'content-type': 'application/json' },
+      body: JSON.stringify({ username: ' DUPLICATE_NAME ' }),
+    });
+    assert.equal(second.status, 409);
   });
 });

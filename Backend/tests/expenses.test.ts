@@ -123,10 +123,14 @@ function makeUser(overrides: Partial<User> = {}): User {
     firebaseUid: overrides.firebaseUid ?? `firebase-${id}`,
     email: overrides.email ?? `${id}@example.com`,
     name: overrides.name ?? `User ${id}`,
+    username: overrides.username ?? id.toLowerCase(),
     photoUrl: overrides.photoUrl ?? null,
+    birthdate: overrides.birthdate ?? null,
     avatarId: overrides.avatarId ?? 'avatar_cool',
     currencyCode: overrides.currencyCode ?? 'INR',
     timezone: overrides.timezone ?? 'UTC',
+    upiId: overrides.upiId ?? null,
+    upiQrDataUrl: overrides.upiQrDataUrl ?? null,
     createdAt: overrides.createdAt ?? now(),
     updatedAt: overrides.updatedAt ?? now(),
   };
@@ -371,6 +375,9 @@ function makeGroupsRepository(): GroupsRepository {
     async findUserById(id) {
       return db.users.get(id) ?? null;
     },
+    async findUserByUsername(username) {
+      return [...db.users.values()].find((user) => user.username === username) ?? null;
+    },
     async findMembership(groupId, userId) {
       return db.memberships.get(mKey(groupId, userId)) ?? null;
     },
@@ -446,7 +453,8 @@ function makeUserRepository(): UserRepository {
     [...db.users.values()].find((u) => u.firebaseUid === uid) ?? null;
   return {
     async findUnique({ where }) {
-      return findByFirebaseUid(where.firebaseUid);
+      if (where.firebaseUid) return findByFirebaseUid(where.firebaseUid);
+      return [...db.users.values()].find((user) => user.username === where.username) ?? null;
     },
     async create({ data }) {
       const existing = findByFirebaseUid(data.firebaseUid);

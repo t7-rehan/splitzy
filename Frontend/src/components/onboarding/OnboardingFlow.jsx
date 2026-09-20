@@ -6,9 +6,10 @@ import { ClayButton } from "../common/ClayButton";
 import { ClayCard } from "../common/ClayCard";
 import { ClayDatePicker } from "../common/ClayDatePicker";
 
-export function OnboardingFlow({ onComplete, initialEmail = "", theme, onThemeChange }) {
+export function OnboardingFlow({ onComplete, initialEmail = "", initialUsername = "", theme, onThemeChange }) {
   const [step, setStep] = useState(0); // 0: Name, 1: Birthday, 2: Theme, 3: Currency, 4: Avatar, 5: All Set
   const [name, setName] = useState("");
+  const [username, setUsername] = useState(initialUsername || "");
   const [birthday, setBirthday] = useState("2000-01-15");
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState(theme.mode || "light");
@@ -30,6 +31,14 @@ export function OnboardingFlow({ onComplete, initialEmail = "", theme, onThemeCh
   const handleNext = () => {
     setError("");
     if (step === 0) {
+      if (!username.trim()) {
+        setError("Please choose a username");
+        return;
+      }
+      if (!/^[a-z0-9_]{3,24}$/i.test(username.trim().replace(/^@+/, ""))) {
+        setError("Username must be 3-24 letters, numbers, or underscores");
+        return;
+      }
       if (!name.trim()) {
         setError("Please enter your name");
         return;
@@ -50,6 +59,7 @@ export function OnboardingFlow({ onComplete, initialEmail = "", theme, onThemeCh
     } else if (step === 5) {
       onComplete({
         name: name.trim(),
+        username: username.trim().replace(/^@+/, "").toLowerCase(),
         email: initialEmail || "user@splitzy.app",
         birthday,
         theme: selectedTheme,
@@ -80,19 +90,41 @@ export function OnboardingFlow({ onComplete, initialEmail = "", theme, onThemeCh
       }}
     >
       <div style={{ width: "100%", maxWidth: "360px" }}>
-        {/* Step 0: Name */}
+        {/* Step 0: Username and name */}
         {step === 0 && (
           <div className="animate-fade-in">
             <ProgressDots step={0} total={5} theme={theme} />
             <h2 style={{ fontSize: "24px", fontWeight: "800", color: theme.text, margin: "0 0 8px" }}>
-              What's your name?
+              Set up your profile
             </h2>
             <p style={{ fontSize: "14px", color: theme.muted, margin: "0 0 24px" }}>
-              You'll show up as "You" in your groups.
+              Choose a username friends can use to add you.
             </p>
 
             <input
               autoFocus
+              type="text"
+              value={username}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                setError("");
+              }}
+              placeholder="Username, e.g. sarthak"
+              style={{
+                width: "100%",
+                padding: "15px 18px",
+                borderRadius: "18px",
+                border: `1px solid ${theme.border}`,
+                backgroundColor: theme.inputBg,
+                boxShadow: theme.clayPressed,
+                fontSize: "16px",
+                fontWeight: "600",
+                color: theme.text,
+                marginBottom: "12px",
+              }}
+            />
+
+            <input
               type="text"
               value={name}
               onChange={(e) => {

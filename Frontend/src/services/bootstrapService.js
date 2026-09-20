@@ -20,9 +20,9 @@ export function mapUserFromApi(payload) {
   if (!payload || typeof payload !== "object") return null;
   return {
     id: payload.id,
-    firebaseUid: payload.firebaseUid,
     email: payload.email,
     displayName: payload.displayName,
+    username: payload.username ?? null,
     photoUrl: payload.photoUrl ?? null,
     birthdate: payload.birthdate ?? null,
     profileCompleted: Boolean(payload.profileCompleted),
@@ -47,6 +47,7 @@ export async function fetchBackendUser() {
 export async function saveBackendProfile(profilePatch = {}) {
   const payload = {};
   if (profilePatch.name !== undefined) payload.name = profilePatch.name;
+  if (profilePatch.username !== undefined) payload.username = profilePatch.username;
   if (profilePatch.birthdate !== undefined) payload.birthdate = profilePatch.birthdate;
   if (profilePatch.avatarId !== undefined) payload.avatarId = profilePatch.avatarId;
   if (profilePatch.homeCurrency !== undefined) payload.currencyCode = profilePatch.homeCurrency;

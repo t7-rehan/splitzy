@@ -27,9 +27,9 @@ export interface VerifiedIdentity {
 /** The PostgreSQL User as exposed to authenticated clients. Never includes credentials. */
 export interface PublicUser {
   id: string;
-  firebaseUid: string;
   email: string;
   displayName: string;
+  username: string | null;
   photoUrl: string | null;
   birthdate: string | null;
   profileCompleted: boolean;

@@ -62,6 +62,7 @@ export interface GroupUpdateData {
 
 export interface GroupsRepository {
   findUserById(id: string): Promise<User | null>;
+  findUserByUsername?(username: string): Promise<User | null>;
   findMembership(groupId: string, userId: string): Promise<GroupMember | null>;
   findGroupById(id: string): Promise<Group | null>;
   findMembershipByGroupAndUser(
@@ -124,6 +125,9 @@ function createPrismaGroupsRepository(): GroupsRepository {
   return {
     async findUserById(id) {
       return prisma.user.findUnique({ where: { id } });
+    },
+    async findUserByUsername(username) {
+      return prisma.user.findUnique({ where: { username } });
     },
     async findMembership(groupId, userId) {
       return prisma.groupMember.findUnique({
@@ -358,6 +362,16 @@ export function validateUserIdInput(value: unknown): string {
   return value.trim();
 }
 
+export function validateUsernameInput(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new AppError(ErrorCodes.VALIDATION_ERROR, {
+      message: 'username is required',
+      details: { username: ['Provide an existing Splitzy username'] },
+    });
+  }
+  return value.trim().replace(/^@+/, '').toLowerCase();
+}
+
 /** Validate a role-change payload against GroupRole (OWNER never allowed). */
 export function validateRoleInput(value: unknown): 'ADMIN' | 'MEMBER' {
   if (typeof value !== 'string') {
@@ -388,11 +402,14 @@ export function validateRoleInput(value: unknown): 'ADMIN' | 'MEMBER' {
 
 export function toPublicMember(
   member: Pick<GroupMember, 'userId' | 'role' | 'joinedAt'>,
-  user: Pick<User, 'name' | 'avatarId' | 'upiId' | 'upiQrDataUrl'> | null,
+  user: Pick<User, 'name' | 'username' | 'avatarId' | 'upiId' | 'upiQrDataUrl'> | null,
+  viewerId: string | null = null,
 ): PublicMember {
   return {
     userId: member.userId,
+    username: user?.username ?? null,
     displayName: user?.name ?? 'Former member',
+    isCurrentUser: Boolean(viewerId && member.userId === viewerId),
     avatarId: user?.avatarId ?? null,
     role: member.role,
     joinedAt: member.joinedAt.toISOString(),
@@ -405,6 +422,7 @@ export function toGroupDetails(
   group: Group,
   members: Array<GroupMember & { user: User | null }>,
   viewerRole: GroupRole,
+  viewerId: string | null = null,
 ): GroupDetails {
   return {
     id: group.id,
@@ -416,7 +434,7 @@ export function toGroupDetails(
     updatedAt: group.updatedAt.toISOString(),
     viewerRole,
     memberCount: members.length,
-    members: members.map((m) => toPublicMember(m, m.user)),
+    members: members.map((m) => toPublicMember(m, m.user, viewerId)),
   };
 }
 
@@ -461,7 +479,7 @@ export async function createGroup(
     actor.user.id,
   );
   const members = await repo.listMembers(group.id);
-  return toGroupDetails(group, members, 'OWNER');
+  return toGroupDetails(group, members, 'OWNER', actor.user.id);
 }
 
 /** List only groups where the actor has a GroupMember row. */
@@ -479,6 +497,7 @@ export async function listMyGroups(actor: {
 export async function getGroupDetails(
   groupId: string,
   viewerRole: GroupRole,
+  viewerId: string | null = null,
 ): Promise<GroupDetails> {
   const repo = groupsRepository();
   const group = await repo.findGroupById(groupId);
@@ -487,7 +506,7 @@ export async function getGroupDetails(
     throw new AppError(ErrorCodes.NOT_FOUND);
   }
   const members = await repo.listMembers(groupId);
-  return toGroupDetails(group, members, viewerRole);
+  return toGroupDetails(group, members, viewerRole, viewerId);
 }
 
 /** Update group fields (caller role pre-verified by the route policy). */
@@ -495,33 +514,49 @@ export async function updateGroup(
   groupId: string,
   patch: GroupPatchInput,
   viewerRole: GroupRole,
+  viewerId: string | null = null,
 ): Promise<GroupDetails> {
   const repo = groupsRepository();
   const group = await repo.updateGroup(groupId, patch);
   const members = await repo.listMembers(groupId);
-  return toGroupDetails(group, members, viewerRole);
+  return toGroupDetails(group, members, viewerRole, viewerId);
 }
 
 /**
  * Add an existing Splitzy user to a group as MEMBER. The target is identified
- * ONLY by internal user id; duplicate membership (unique constraint) → 409.
+ * ONLY by normalized username; duplicate membership (unique constraint) → 409.
  */
 export async function addMember(
   groupId: string,
-  targetUserId: string,
+  username: string,
+  actorUserId: string,
 ): Promise<PublicMember> {
   const repo = groupsRepository();
-  const targetUser = await repo.findUserById(targetUserId);
+  const targetUserByUsername = repo.findUserByUsername
+    ? await repo.findUserByUsername(username)
+    : await repo.findUserById(username);
+  const targetUser = targetUserByUsername ?? await repo.findUserById(username);
   if (!targetUser) {
     throw new AppError(ErrorCodes.NOT_FOUND, {
-      message: 'User not found',
-      details: { userId: ['No Splitzy user exists with this id'] },
+      message: 'No Splitzy user found with this username',
+      details: { username: ['Register this username before adding the user'] },
+    });
+  }
+  if (targetUser.id === actorUserId) {
+    throw new AppError(ErrorCodes.CONFLICT, {
+      message: 'You are already a member of this group',
+    });
+  }
+  const existingMembership = await repo.findMembershipByGroupAndUser(groupId, targetUser.id);
+  if (existingMembership) {
+    throw new AppError(ErrorCodes.CONFLICT, {
+      message: 'This user is already a member of this group',
     });
   }
   try {
     const membership = await repo.createMembership({
       groupId,
-      userId: targetUserId,
+      userId: targetUser.id,
       role: 'MEMBER',
     });
     return toPublicMember(membership, targetUser);

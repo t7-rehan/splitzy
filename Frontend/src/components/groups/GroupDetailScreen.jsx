@@ -19,6 +19,9 @@ import { RecurringSection } from "../expenses/RecurringSection";export function 
   isPro,
   onShowProUpgrade,
   onToast,
+  onSearchUsers,
+  onAddMember,
+  onRemoveServerMember,
   theme,
   deletingExpenseIds = [],
 }) {
@@ -218,6 +221,9 @@ import { RecurringSection } from "../expenses/RecurringSection";export function 
         isPro={isPro}
         onShowProUpgrade={onShowProUpgrade}
         onErrorToast={(msg) => onToast && onToast({ type: "error", message: msg })}
+        onSearchUsers={onSearchUsers}
+        onAddMember={onAddMember}
+        onRemoveServerMember={onRemoveServerMember}
       />
 
       {/* Smart Settlement Diagram */}

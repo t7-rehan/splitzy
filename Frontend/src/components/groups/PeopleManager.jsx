@@ -4,12 +4,47 @@ import { avatarStyle, useTheme } from "../../theme/clayTheme";
 import { validateRemoveMember } from "../../services/validation";
 import { checkCanAddMember } from "../../services/proService";
 
-export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, onErrorToast }) {
+export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, onErrorToast, onSearchUsers, onAddMember, onRemoveServerMember }) {
   const { theme } = useTheme();
   const [newMemberName, setNewMemberName] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
+  const [usernameQuery, setUsernameQuery] = useState("");
+  const [searchResult, setSearchResult] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [memberActionBusy, setMemberActionBusy] = useState(false);
+
+  const isServerGroup = Boolean(group.isServerGroup && onSearchUsers && onAddMember);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    setWarningMessage("");
+    setSearchResult(null);
+    setSearching(true);
+    try {
+      setSearchResult(await onSearchUsers(usernameQuery));
+    } catch (error) {
+      setWarningMessage(error?.userMessage || "No Splitzy user found with this username.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleAddServerMember = async () => {
+    if (!searchResult || memberActionBusy) return;
+    setMemberActionBusy(true);
+    try {
+      await onAddMember(searchResult.username);
+      setUsernameQuery("");
+      setSearchResult(null);
+      setWarningMessage("");
+    } catch (error) {
+      setWarningMessage(error?.userMessage || "Could not add this member.");
+    } finally {
+      setMemberActionBusy(false);
+    }
+  };
 
   const handleAddMember = (e) => {
     e.preventDefault();
@@ -128,7 +163,7 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
       {/* Member pills */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
         {group.members.map((m, idx) => {
-          const isYou = m.id === "you";
+          const isYou = m.id === "you" || m.isCurrentUser;
           const isEditing = editingId === m.id;
           const av = avatarStyle(idx);
 
@@ -195,12 +230,13 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
                   <span style={{ fontSize: "13px", fontWeight: "600", color: theme.text }}>
                     {m.name}
                     {isYou && <span style={{ color: theme.muted, fontWeight: "500" }}> • You</span>}
+                    {m.username && <span style={{ display: "block", color: theme.muted, fontSize: "11px", fontWeight: "500" }}>@{m.username}</span>}
                   </span>
                   <span style={{ fontSize: "10px", color: theme.muted, fontWeight: "700", textTransform: "uppercase" }}>
                     {isYou ? "Admin" : (m.role || "Member")}
                   </span>
 
-                  {!isYou && (
+                  {!isYou && !isServerGroup && (
                     <div style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "4px" }}>
                       <button
                         onClick={() => handleStartRename(m)}
@@ -216,6 +252,19 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
                       </button>
                     </div>
                   )}
+                  {!isYou && isServerGroup && onRemoveServerMember && (
+                    <button
+                      onClick={async () => {
+                        setMemberActionBusy(true);
+                        try { await onRemoveServerMember(m); } catch (error) { setWarningMessage(error?.userMessage || "Could not remove this member."); }
+                        finally { setMemberActionBusy(false); }
+                      }}
+                      disabled={memberActionBusy}
+                      style={{ background: "none", border: "none", color: theme.mutedSoft, cursor: "pointer", padding: "2px" }}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -223,8 +272,29 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
         })}
       </div>
 
-      {/* Add member form */}
-      <form onSubmit={handleAddMember} style={{ display: "flex", gap: "8px" }}>
+      {/* Server-backed username search */}
+      {isServerGroup ? (
+        <div>
+          <form onSubmit={handleSearch} style={{ display: "flex", gap: "8px" }}>
+            <input
+              type="text"
+              placeholder="@username"
+              value={usernameQuery}
+              onChange={(e) => setUsernameQuery(e.target.value)}
+              style={{ flex: 1, padding: "10px 14px", borderRadius: "14px", border: `1px solid ${theme.border}`, backgroundColor: theme.inputBg, boxShadow: theme.clayPressed, fontSize: "13.5px", color: theme.text }}
+            />
+            <button type="submit" disabled={searching} style={{ padding: "10px 16px", borderRadius: "14px", backgroundColor: theme.primary, color: "#FFF", border: "none", fontWeight: "700", fontSize: "13px", cursor: "pointer" }}>
+              {searching ? "Searching..." : "Search"}
+            </button>
+          </form>
+          {searchResult && (
+            <div style={{ marginTop: "10px", padding: "10px 12px", border: `1px solid ${theme.borderLight}`, borderRadius: "14px", backgroundColor: theme.card, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <div><strong>{searchResult.name}</strong><div style={{ color: theme.muted, fontSize: "12px" }}>@{searchResult.username}</div></div>
+              <button type="button" onClick={handleAddServerMember} disabled={memberActionBusy} style={{ padding: "7px 10px", borderRadius: "10px", backgroundColor: theme.emerald, color: "#FFF", border: "none", fontWeight: "700", fontSize: "11px", cursor: "pointer" }}>{memberActionBusy ? "Adding..." : "Add to Group"}</button>
+            </div>
+          )}
+        </div>
+      ) : <form onSubmit={handleAddMember} style={{ display: "flex", gap: "8px" }}>
         <input
           type="text"
           placeholder="Add a person to group"
@@ -260,7 +330,7 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
         >
           <Plus size={16} /> Add
         </button>
-      </form>
+      </form>}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   validateGroupPatch,
   validateRoleInput,
   validateUserIdInput,
+  validateUsernameInput,
 } from '../services/groups.service.js';
 import type { ApiSuccessBody } from '../types/api.js';
 import type { GroupDetails, GroupSummary } from '../types/groups.js';
@@ -69,6 +70,7 @@ export async function getGroupHandler(
     const group = await getGroupDetails(
       param(req, 'groupId'),
       req.groupMembership!.role,
+      req.actor!.user.id,
     );
     const body: ApiSuccessBody<GroupDetails> = { success: true, data: group };
     res.status(200).json(body);
@@ -88,6 +90,7 @@ export async function updateGroupHandler(
       param(req, 'groupId'),
       patch,
       req.groupMembership!.role,
+      req.actor!.user.id,
     );
     const body: ApiSuccessBody<GroupDetails> = { success: true, data: group };
     res.status(200).json(body);
@@ -119,8 +122,10 @@ export async function addMemberHandler(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const targetUserId = validateUserIdInput(req.body?.userId);
-    const member = await addMember(param(req, 'groupId'), targetUserId);
+    const username = req.body?.username !== undefined
+      ? validateUsernameInput(req.body.username)
+      : validateUserIdInput(req.body?.userId);
+    const member = await addMember(param(req, 'groupId'), username, req.actor!.user.id);
     const body: ApiSuccessBody<typeof member> = { success: true, data: member };
     res.status(201).json(body);
   } catch (error) {

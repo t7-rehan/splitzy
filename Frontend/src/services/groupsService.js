@@ -18,7 +18,7 @@
  * No creator/user/firebaseUid fields are ever sent in bodies.
  */
 
-import { apiGet, apiPost, apiPatch } from "./apiClient.js";
+import { apiGet, apiPost, apiPatch, apiDelete } from "./apiClient.js";
 
 /** Validate a server-assigned group id (UUID) before using it in a path. */
 export function assertGroupId(groupId) {
@@ -38,6 +38,22 @@ export function fetchMyGroups() {
 export function fetchGroupDetails(groupId) {
   assertGroupId(groupId);
   return apiGet(`/api/v1/groups/${encodeURIComponent(groupId)}`);
+}
+
+export function searchUsersByUsername(username) {
+  const value = String(username || '').trim().replace(/^@+/, '');
+  if (!value) throw new Error('Username is required');
+  return apiGet(`/api/v1/users/search?username=${encodeURIComponent(value)}`);
+}
+
+export function addGroupMember(groupId, username) {
+  assertGroupId(groupId);
+  return apiPost(`/api/v1/groups/${encodeURIComponent(groupId)}/members`, { username });
+}
+
+export function removeGroupMember(groupId, userId) {
+  assertGroupId(groupId);
+  return apiDelete(`/api/v1/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`);
 }
 
 /**

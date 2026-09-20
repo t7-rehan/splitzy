@@ -32,7 +32,9 @@ declare global {
 export interface PublicMember {
   /** Internal Splitzy user id — the target identifier for member routes. */
   userId: string | null;
+  username: string | null;
   displayName: string;
+  isCurrentUser: boolean;
   /** Avatar token. Email is deliberately NOT included (minimum public info). */
   avatarId: string | null;
   role: GroupRole;

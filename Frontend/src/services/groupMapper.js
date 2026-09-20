@@ -64,8 +64,10 @@ export function mapMembersFromApi(dto, myUserId) {
     Array.isArray(dto.members) && dto.members.length > 0
       ? dto.members.map((m) => ({
           userId: m.userId,
+          username: m.username || null,
           name: m.displayName,
           role: m.role,
+          isCurrentUser: Boolean(m.isCurrentUser),
         }))
       : Array.isArray(dto.memberships)
         ? dto.memberships.map((m) => ({
@@ -85,8 +87,10 @@ export function mapMembersFromApi(dto, myUserId) {
     return {
       id: memberId,
       name,
+      username: m.username || null,
       role: m.role || "MEMBER",
       userId: m.userId || null,
+      isCurrentUser: Boolean(m.isCurrentUser),
       upiId: m.upiId || null,
       upiQrDataUrl: m.upiQrDataUrl || null,
     };

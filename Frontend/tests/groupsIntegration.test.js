@@ -91,9 +91,9 @@ describe("auth bootstrap", () => {
   it("mapUserFromApi keeps only the safe public projection", () => {
     const mapped = mapUserFromApi({
       id: "u1",
-      firebaseUid: "fb-1",
       email: "x@y.z",
       displayName: "X",
+      username: null,
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,
@@ -103,9 +103,9 @@ describe("auth bootstrap", () => {
     });
     assert.deepEqual(mapped, {
       id: "u1",
-      firebaseUid: "fb-1",
       email: "x@y.z",
       displayName: "X",
+      username: null,
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,

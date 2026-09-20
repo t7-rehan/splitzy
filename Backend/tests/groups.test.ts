@@ -72,12 +72,16 @@ function makeUser(overrides: Partial<User> = {}): User {
     firebaseUid: overrides.firebaseUid ?? `firebase-${id}`,
     email: overrides.email ?? `${id}@example.com`,
     name: overrides.name ?? `User ${id}`,
+    username: overrides.username ?? id.toLowerCase(),
     photoUrl: overrides.photoUrl ?? null,
+    birthdate: overrides.birthdate ?? null,
     avatarId: overrides.avatarId ?? 'avatar_cool',
     currencyCode: overrides.currencyCode ?? 'INR',
     timezone: overrides.timezone ?? 'UTC',
     createdAt: overrides.createdAt ?? now(),
     updatedAt: overrides.updatedAt ?? now(),
+    upiId: overrides.upiId ?? null,
+    upiQrDataUrl: overrides.upiQrDataUrl ?? null,
   };
   db.users.set(user.id, user);
   return user;
@@ -129,6 +133,9 @@ function makeGroupsRepository(): GroupsRepository {
   return {
     async findUserById(id) {
       return db.users.get(id) ?? null;
+    },
+    async findUserByUsername(username) {
+      return [...db.users.values()].find((user) => user.username === username) ?? null;
     },
     async findMembership(groupId, userId) {
       return db.memberships.get(membershipKey(groupId, userId)) ?? null;
@@ -213,7 +220,8 @@ function makeUserRepository(): UserRepository {
 
   return {
     async findUnique({ where }) {
-      return findByFirebaseUid(where.firebaseUid);
+      if (where.firebaseUid) return findByFirebaseUid(where.firebaseUid);
+      return [...db.users.values()].find((user) => user.username === where.username) ?? null;
     },
     async create({ data }) {
       const uid = data.firebaseUid;
@@ -774,6 +782,46 @@ describe('Groups API — membership management', () => {
       body: JSON.stringify({ userId: 'user-does-not-exist' }),
     });
     assert.equal(response.status, 404);
+  });
+
+  it('23a. username add makes the same group visible to the invited user', async () => {
+    const addResponse = await fetch(`${baseUrl}/api/v1/groups/${group.id}/members`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...devHeaders('m-owner') },
+      body: JSON.stringify({ username: outsider.username }),
+    });
+    assert.equal(addResponse.status, 201);
+    const memberBody = (await addResponse.json()) as { data: { userId: string; username: string } };
+    assert.equal(memberBody.data.userId, outsider.id);
+    assert.equal(memberBody.data.username, outsider.username);
+
+    const detailResponse = await fetch(`${baseUrl}/api/v1/groups/${group.id}`, {
+      headers: devHeaders('m-outsider'),
+    });
+    assert.equal(detailResponse.status, 200);
+    const detailBody = (await detailResponse.json()) as { data: { members: Array<{ userId: string; username: string; isCurrentUser: boolean }> } };
+    const invitedMember = detailBody.data.members.find((candidate) => candidate.userId === outsider.id);
+    assert.equal(invitedMember?.username, outsider.username);
+    assert.equal(invitedMember?.isCurrentUser, true);
+
+    const groupsResponse = await fetch(`${baseUrl}/api/v1/groups`, {
+      headers: devHeaders('m-outsider'),
+    });
+    assert.equal(groupsResponse.status, 200);
+    const groupsBody = (await groupsResponse.json()) as { data: Array<{ id: string }> };
+    assert.ok(groupsBody.data.some((candidate) => candidate.id === group.id));
+
+    const removeResponse = await fetch(memberUrl(outsider.id), {
+      method: 'DELETE',
+      headers: devHeaders('m-owner'),
+    });
+    assert.equal(removeResponse.status, 200);
+    const groupsAfterRemoval = await fetch(`${baseUrl}/api/v1/groups`, {
+      headers: devHeaders('m-outsider'),
+    });
+    assert.equal(groupsAfterRemoval.status, 200);
+    const removedBody = (await groupsAfterRemoval.json()) as { data: Array<{ id: string }> };
+    assert.ok(!removedBody.data.some((candidate) => candidate.id === group.id));
   });
 
   it('24. owner can remove an ordinary member', async () => {

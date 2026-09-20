@@ -24,6 +24,9 @@ import {
   fetchMyGroups,
   fetchGroupDetails,
   createGroup as apiCreateGroup,
+  searchUsersByUsername,
+  addGroupMember,
+  removeGroupMember,
 } from "./services/groupsService";
 import {
   mapGroupFromApi,
@@ -242,6 +245,7 @@ export default function App() {
           id: user.id,
           email: user.email,
           name: user.displayName || "Splitzy User",
+          username: user.username || null,
           birthdate: user.birthdate || null,
           profileCompleted: Boolean(user.profileCompleted),
           photoUrl: user.photoUrl || null,
@@ -445,6 +449,7 @@ export default function App() {
     try {
       const saved = await saveBackendProfile({
         name: fullProfile.name,
+        username: fullProfile.username,
         birthdate: fullProfile.birthdate,
         avatarId: fullProfile.avatarId,
         homeCurrency: fullProfile.homeCurrency,
@@ -478,6 +483,7 @@ export default function App() {
     try {
       const saved = await saveBackendProfile({
         name: next.name,
+        username: next.username,
         birthdate: next.birthdate,
         avatarId: next.avatarId,
         homeCurrency: next.homeCurrency,
@@ -594,6 +600,30 @@ export default function App() {
       }
     }
     setGroups(groups.map((g) => (g.id === updatedGroup.id ? updatedGroup : g)));
+  };
+
+  const handleSearchGroupUsers = (username) => searchUsersByUsername(username);
+
+  const handleAddGroupMember = async (groupId, username) => {
+    const dto = await addGroupMember(groupId, username);
+    setGroups((current) => current.map((group) => {
+      if (group.id !== groupId) return group;
+      const member = mapGroupFromApi({ ...group, members: [dto] }, { localGroup: group, myUserId: backendUser?.id }).members.find((item) => item.userId === dto.userId);
+      return member && !group.members.some((item) => item.userId === member.userId)
+        ? { ...group, members: [...group.members, member], memberCount: group.members.length + 1 }
+        : group;
+    }));
+    showToast({ message: `${dto.displayName} added to ${groups.find((group) => group.id === groupId)?.name || "the group"}`, type: "success" });
+    return dto;
+  };
+
+  const handleRemoveGroupMember = async (groupId, member) => {
+    if (!member.userId) return;
+    await removeGroupMember(groupId, member.userId);
+    setGroups((current) => current.map((group) => group.id === groupId
+      ? { ...group, members: group.members.filter((item) => item.userId !== member.userId), memberCount: Math.max(0, group.members.length - 1) }
+      : group));
+    showToast({ message: `${member.name} removed from the group`, type: "info" });
   };
 
   const handleDeleteGroup = (groupId) => {
@@ -855,6 +885,7 @@ export default function App() {
           <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
           <OnboardingFlow
             initialEmail={authSession.email}
+            initialUsername={backendUser.username || ""}
             onComplete={handleCompleteProfile}
             theme={theme}
             onThemeChange={handleThemeChange}
@@ -955,6 +986,9 @@ export default function App() {
             isPro={profile.isPro}
             onShowProUpgrade={handleTriggerProUpgrade}
             onToast={showToast}
+            onSearchUsers={handleSearchGroupUsers}
+            onAddMember={(username) => handleAddGroupMember(selectedGroupId, username)}
+            onRemoveServerMember={(member) => handleRemoveGroupMember(selectedGroupId, member)}
             theme={theme}
           />
           </ScreenErrorBoundary>
