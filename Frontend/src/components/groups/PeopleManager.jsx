@@ -190,7 +190,7 @@ export function PeopleManager({ group, onUpdateGroup, isPro, onShowProUpgrade, o
                       justifyContent: "center",
                     }}
                   >
-                    {m.name[0].toUpperCase()}
+                    {(m?.name?.trim()?.charAt(0) || "M").toUpperCase()}
                   </div>
                   <span style={{ fontSize: "13px", fontWeight: "600", color: theme.text }}>
                     {m.name} {isYou && <span style={{ color: theme.muted, fontWeight: "500" }}>(You)</span>}

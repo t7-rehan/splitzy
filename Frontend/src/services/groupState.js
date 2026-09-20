@@ -12,7 +12,8 @@
  * Returns a new array (never mutates the input).
  */
 export function appendGroupOnce(groups, group) {
-  if (!group || !group.id) return groups;
-  if (groups.some((g) => g.id === group.id)) return groups;
-  return [...groups, group];
+  const safeGroups = Array.isArray(groups) ? groups : [];
+  if (!group || !group.id) return safeGroups;
+  if (safeGroups.some((g) => g && g.id === group.id)) return safeGroups;
+  return [...safeGroups, group];
 }

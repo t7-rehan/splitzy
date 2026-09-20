@@ -202,16 +202,18 @@ export function HomeScreen({
                       {group.name}
                     </div>
                     <div style={{ fontSize: "12px", color: theme.muted, marginTop: "2px" }}>
-                      {group.members.length} people · {group.expenses.length} expense{group.expenses.length === 1 ? "" : "s"}
+                      {(group.members || []).length} people · {(group.expenses || []).length} expense{(group.expenses || []).length === 1 ? "" : "s"}
                     </div>
 
                     {/* Member Avatars */}
                     <div style={{ display: "flex", marginTop: "10px" }}>
-                      {group.members.slice(0, 4).map((m, idx) => {
+                      {(group.members || []).slice(0, 4).map((m, idx) => {
                         const av = avatarStyle(idx);
+                        const memberName = m && typeof m.name === "string" && m.name.trim().length > 0 ? m.name.trim() : "Member";
+                        const initial = (memberName.charAt(0) || "M").toUpperCase();
                         return (
                           <div
-                            key={m.id}
+                            key={m?.id || idx}
                             style={{
                               width: "24px",
                               height: "24px",
@@ -227,7 +229,7 @@ export function HomeScreen({
                               border: `2px solid ${theme.card}`,
                             }}
                           >
-                            {m.name[0].toUpperCase()}
+                            {initial}
                           </div>
                         );
                       })}
@@ -247,7 +249,7 @@ export function HomeScreen({
                         {gOwed
                           ? `+${fmtMoney(myNet, group.currency)}`
                           : gOwe
-                          ? `-${fmtMoney(myNet, group.currency)}`
+                          ? fmtMoney(myNet, group.currency)
                           : "Settled ✓"}
                       </div>
                       <div style={{ fontSize: "10.5px", color: theme.muted, marginTop: "2px" }}>

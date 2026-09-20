@@ -9,8 +9,10 @@ import {
   saveAuthSession,
   clearAuthSession,
   clearLegacyAuthSession,
+  clearUserCache,
   loadStoredTheme,
 } from "./services/storage";
+import { Coins } from "lucide-react";
 
 // Services — authentication (Firebase identity) + backend integration (Task 8)
 import {
@@ -69,13 +71,11 @@ import { UPIPaymentModal } from "./components/pro/UPIPaymentModal";
 import { GroupLinkModal } from "./components/pro/GroupLinkModal";
 
 export default function App() {
-  // Firebase identity is authoritative for sign-in; `authSession` (localStorage
-  // mirror) exists only for a flicker-free first paint until Firebase reports.
   const [authSession, setAuthSession] = useState(() => loadAuthSession());
   const [firebaseReady, setFirebaseReady] = useState(false);
-  const [profile, setProfile] = useState(() => loadProfile());
+  const [profile, setProfile] = useState(() => loadProfile(authSession?.uid));
   const [themeMode, setThemeMode] = useState(() => profile?.theme || loadStoredTheme() || "light");
-  const [groups, setGroups] = useState(() => loadGroups(profile?.name || "Sarthak", profile?.homeCurrency || "INR"));
+  const [groups, setGroups] = useState(() => (authSession?.uid ? loadGroups(authSession.uid) : []));
 
   // Task 8: server-backed identity + groups state.
   //   backendUser     — the PostgreSQL User resolved from the Firebase identity
@@ -149,13 +149,40 @@ export default function App() {
           loggedInAt: new Date().toISOString(),
         };
         saveAuthSession(sessionData);
-        setAuthSession(sessionData);
+        setAuthSession((prev) => {
+          if (prev?.uid && prev.uid !== firebaseUser.uid) {
+            setSelectedGroupId(null);
+            setBackendUser(null);
+          }
+          return sessionData;
+        });
+
+        // Load profile scoped to this user
+        let userProfile = loadProfile(firebaseUser.uid);
+        if (!userProfile) {
+          userProfile = {
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || "Splitzy User",
+            homeCurrency: "INR",
+            theme: "light",
+            isPro: false,
+            profileCompleted: false,
+          };
+        }
+        setProfile(userProfile);
+
+        // Load groups scoped to this user (returns [] for brand new user!)
+        const userGroups = loadGroups(firebaseUser.uid);
+        setGroups(userGroups);
       } else {
-        // Real sign-out — but only drop Firebase-derived sessions; the legacy
-        // local-only flow is untouched until backend integration migrates it.
+        // Real sign-out
         setAuthSession((current) => {
           if (current?.authType === "google") {
             clearAuthSession();
+            setBackendUser(null);
+            setGroups([]);
+            setProfile(null);
+            setSelectedGroupId(null);
             return null;
           }
           return current;
@@ -165,20 +192,22 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Save profile changes to localStorage
+  // Save profile changes to localStorage scoped to active UID
   useEffect(() => {
-    if (profile) {
-      saveProfile(profile);
+    if (profile && authSession?.uid) {
+      saveProfile(profile, authSession.uid);
       if (profile.theme && profile.theme !== themeMode) {
         setThemeMode(profile.theme);
       }
     }
-  }, [profile]);
+  }, [profile, authSession?.uid]);
 
-  // Save groups changes to localStorage
+  // Save groups changes to localStorage scoped to active UID
   useEffect(() => {
-    if (groups) saveGroups(groups);
-  }, [groups]);
+    if (groups && authSession?.uid) {
+      saveGroups(groups, authSession.uid);
+    }
+  }, [groups, authSession?.uid]);
 
   // ---- Server groups sync (Task 8) ---------------------------------------
   // Firebase auth → GET /auth/me → GET /groups. PostgreSQL is authoritative
@@ -380,26 +409,27 @@ export default function App() {
     };
 
     setProfile(fullProfile);
-    saveProfile(fullProfile);
-    saveAuthSession({ email: fullProfile.email, loggedInAt: new Date().toISOString() });
-    setAuthSession({ email: fullProfile.email });
-
-    const initialGroups = loadGroups(fullProfile.name, fullProfile.homeCurrency);
-    setGroups(initialGroups);
+    if (authSession?.uid) {
+      saveProfile(fullProfile, authSession.uid);
+    }
     showToast({ message: `Welcome to Splitzy, ${fullProfile.name.split(" ")[0]}!`, type: "success" });
   };
 
   const handleUpdateProfile = (updatedProfile) => {
     setProfile(updatedProfile);
+    if (authSession?.uid) {
+      saveProfile(updatedProfile, authSession.uid);
+    }
     showToast({ message: "Profile updated successfully", type: "success" });
   };
 
-  // Signs out of Firebase (safe no-op if Firebase is unavailable) and clears
-  // the local mirror session. Splitzy app data (profile/groups) is preserved.
   const handleLogout = async () => {
     await firebaseSignOut();
     clearAuthSession();
     setAuthSession(null);
+    setBackendUser(null);
+    setGroups([]);
+    setProfile(null);
     setAuthStage("login");
     setSelectedGroupId(null);
     setActiveTab("home");
@@ -419,7 +449,7 @@ export default function App() {
   // membership and timestamps — the client sends only content fields. On
   // failure nothing fake is inserted; the error surfaces with the existing toast.
   const handleCreateGroup = async (groupData) => {
-    if (creatingGroup) return;
+    if (creatingGroup) return null;
     setCreatingGroup(true);
     try {
       const dto = await apiCreateGroup({
@@ -450,6 +480,7 @@ export default function App() {
           "Could not create the group. Please try again.",
         type: "error",
       });
+      return null;
     } finally {
       setCreatingGroup(false);
     }
@@ -656,10 +687,17 @@ export default function App() {
   };
 
   const handleResetData = async () => {
+    const currentUid = authSession?.uid;
     await firebaseSignOut();
-    localStorage.clear();
+    if (currentUid) {
+      clearUserCache(currentUid);
+    } else {
+      localStorage.clear();
+    }
+    clearAuthSession();
     setProfile(null);
     setAuthSession(null);
+    setBackendUser(null);
     setGroups([]);
     setSelectedGroupId(null);
     setActiveTab("home");
@@ -676,6 +714,34 @@ export default function App() {
       <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
         <MobileContainer>
           <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
+          <div
+            style={{
+              minHeight: "100vh",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "14px",
+            }}
+          >
+            <div
+              style={{
+                width: "56px",
+                height: "56px",
+                borderRadius: "18px",
+                backgroundColor: theme.primary,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: theme.clayRaised,
+              }}
+            >
+              <Coins size={30} color="#FFF" />
+            </div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: theme.muted }}>
+              Loading Splitzy...
+            </div>
+          </div>
         </MobileContainer>
       </ThemeProvider>
     );
@@ -722,7 +788,7 @@ export default function App() {
             activeTab={activeTab}
             onSelectTab={(tab) => {
               setActiveTab(tab);
-              if (tab !== "groups") setSelectedGroupId(null);
+              setSelectedGroupId(null);
             }}
             isPro={profile.isPro}
             theme={theme}
@@ -764,19 +830,21 @@ export default function App() {
           />
         )}
 
-        {/* Groups Tab */}
+        {/* Groups Tab — wrapped in ScreenErrorBoundary so render errors never blank the app */}
         {activeTab === "groups" && !selectedGroup && (
-          <GroupListScreen
-            groups={groups}
-            onSelectGroup={(id) => setSelectedGroupId(id)}
-            onCreateGroup={() => setShowCreateGroup(true)}
-            isPro={profile.isPro}
-            onShowProUpgrade={handleTriggerProUpgrade}
-            serverSync={groupsSyncState}
-            syncErrorMessage={syncErrorMessage}
-            onRetrySync={() => setSyncNonce((n) => n + 1)}
-            theme={theme}
-          />
+          <ScreenErrorBoundary>
+            <GroupListScreen
+              groups={groups}
+              onSelectGroup={(id) => setSelectedGroupId(id)}
+              onCreateGroup={() => setShowCreateGroup(true)}
+              isPro={profile.isPro}
+              onShowProUpgrade={handleTriggerProUpgrade}
+              serverSync={groupsSyncState}
+              syncErrorMessage={syncErrorMessage}
+              onRetrySync={() => setSyncNonce((n) => n + 1)}
+              theme={theme}
+            />
+          </ScreenErrorBoundary>
         )}
 
         {/* Group Detail View — wrapped so a render bug can never blank the

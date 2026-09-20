@@ -47,18 +47,30 @@ export function getShares(e) {
 
 export function computeBalances(members = [], expenses = []) {
   const net = {};
-  members.forEach((m) => (net[m.id] = 0));
+  const safeMembers = Array.isArray(members) ? members : [];
+  const safeExpenses = Array.isArray(expenses) ? expenses : [];
+
+  safeMembers.forEach((m) => {
+    if (m && m.id !== undefined && m.id !== null) {
+      net[m.id] = 0;
+    }
+  });
   
-  expenses.forEach((e) => {
+  safeExpenses.forEach((e) => {
+    if (!e) return;
+    const amount = typeof e.amount === "number" ? e.amount : Number(e.amount) || 0;
     if (net[e.paidBy] !== undefined) {
-      net[e.paidBy] = (net[e.paidBy] || 0) + e.amount;
+      net[e.paidBy] = (net[e.paidBy] || 0) + amount;
     }
     const shares = getShares(e);
-    Object.entries(shares).forEach(([id, amt]) => {
-      if (net[id] !== undefined) {
-        net[id] -= amt;
-      }
-    });
+    if (shares && typeof shares === "object") {
+      Object.entries(shares).forEach(([id, rawAmt]) => {
+        const amt = typeof rawAmt === "number" ? rawAmt : Number(rawAmt) || 0;
+        if (net[id] !== undefined) {
+          net[id] -= amt;
+        }
+      });
+    }
   });
 
   return net;
@@ -68,9 +80,12 @@ export function simplifySettlements(net = {}) {
   const creditors = [];
   const debtors = [];
 
-  Object.entries(net).forEach(([id, amt]) => {
-    if (amt > 0.5) creditors.push({ id, amt });
-    else if (amt < -0.5) debtors.push({ id, amt: -amt });
+  const safeNet = net && typeof net === "object" ? net : {};
+  Object.entries(safeNet).forEach(([id, amt]) => {
+    if (typeof amt === "number") {
+      if (amt > 0.5) creditors.push({ id, amt });
+      else if (amt < -0.5) debtors.push({ id, amt: -amt });
+    }
   });
 
   creditors.sort((a, b) => b.amt - a.amt);
@@ -268,9 +283,17 @@ export function clearLegacyAuthSession() {
   }
 }
 
-export function loadProfile() {
+export function getScopedKey(keyName, uid = null) {
+  if (uid && typeof uid === "string" && uid.trim().length > 0) {
+    return `splitzy:${uid.trim()}:${keyName}`;
+  }
+  return STORAGE_KEYS[keyName.toUpperCase()] || `splitzy_${keyName}`;
+}
+
+export function loadProfile(uid = null) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PROFILE);
+    const key = getScopedKey("profile", uid);
+    const raw = localStorage.getItem(key);
     if (raw) return JSON.parse(raw);
   } catch (e) {
     console.error("Failed to load profile", e);
@@ -278,9 +301,10 @@ export function loadProfile() {
   return null;
 }
 
-export function saveProfile(profile) {
+export function saveProfile(profile, uid = null) {
   try {
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+    const key = getScopedKey("profile", uid);
+    localStorage.setItem(key, JSON.stringify(profile));
     if (profile?.theme) {
       localStorage.setItem(STORAGE_KEYS.THEME, profile.theme);
     }
@@ -297,25 +321,70 @@ export function loadStoredTheme() {
   }
 }
 
-export function loadGroups(youName = "Sarthak", homeCurrency = "INR") {
+/**
+ * Loads groups for the viewer.
+ *
+ * Scoping rules:
+ * - If an authenticated Firebase UID is provided:
+ *   Reads splitzy:<uid>:groups.
+ *   If found: returns the array (even if empty []).
+ *   If NOT found: returns [] (NEVER injects demo/seed groups for authenticated users!).
+ * - If no UID is provided (unauthenticated guest/preview mode only):
+ *   Reads legacy global storage key. If missing, falls back to default seed groups.
+ */
+export function loadGroups(uidOrOptions = null, youName = "Sarthak", homeCurrency = "INR") {
+  let uid = null;
+  let defaultName = youName;
+  let defaultCurrency = homeCurrency;
+
+  if (typeof uidOrOptions === "object" && uidOrOptions !== null) {
+    uid = uidOrOptions.uid || null;
+    defaultName = uidOrOptions.youName || defaultName;
+    defaultCurrency = uidOrOptions.homeCurrency || defaultCurrency;
+  } else if (typeof uidOrOptions === "string" && uidOrOptions.trim().length > 0) {
+    uid = uidOrOptions.trim();
+  }
+
+  const key = getScopedKey("groups", uid);
+
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.GROUPS);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.error("Failed to load groups", e);
   }
-  const defaultGroups = getDefaultSeedGroups(youName, homeCurrency);
-  saveGroups(defaultGroups);
+
+  // Authenticated users must see ZERO groups until created or synced from server.
+  if (uid) {
+    return [];
+  }
+
+  // Unauthenticated guest preview only
+  const defaultGroups = getDefaultSeedGroups(defaultName, defaultCurrency);
+  saveGroups(defaultGroups, null);
   return defaultGroups;
 }
 
-export function saveGroups(groups) {
+export function saveGroups(groups, uid = null) {
   try {
-    localStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
+    const key = getScopedKey("groups", uid);
+    localStorage.setItem(key, JSON.stringify(groups || []));
   } catch (e) {
     console.error("Failed to save groups", e);
   }
 }
+
+export function clearUserCache(uid) {
+  if (!uid) return;
+  try {
+    localStorage.removeItem(getScopedKey("groups", uid));
+    localStorage.removeItem(getScopedKey("profile", uid));
+    localStorage.removeItem(getScopedKey("settled_txns", uid));
+  } catch (e) {
+    console.error("Failed to clear user cache", e);
+  }
+}
+

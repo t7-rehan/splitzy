@@ -42,9 +42,31 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
       <ClayCard style={{ textAlign: "center", padding: "28px 18px", marginBottom: "20px" }}>
         <Sparkles size={28} color={C.emerald} style={{ margin: "0 auto 8px" }} />
         <div style={{ fontSize: "16px", fontWeight: "800", color: C.text }}>All settled up! ✓</div>
-        <div style={{ fontSize: "12.5px", color: C.muted, marginTop: "4px" }}>
+        <div style={{ fontSize: "12.5px", color: C.muted, marginTop: "4px", marginBottom: "12px" }}>
           Nobody owes anyone money in this group right now.
         </div>
+        {currency === "INR" && onOpenUPI && (
+          <button
+            onClick={() => onOpenUPI({ payeeName: "", payeeUpi: "", amount: "", isFromQr: false })}
+            style={{
+              margin: "0 auto",
+              background: "none",
+              border: `1px solid ${C.emerald}`,
+              backgroundColor: C.emeraldTint,
+              borderRadius: "12px",
+              padding: "7px 12px",
+              fontSize: "12px",
+              fontWeight: "700",
+              color: C.emeraldDark,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <QrCode size={14} /> Upload UPI QR to Pay
+          </button>
+        )}
       </ClayCard>
     );
   }
@@ -61,26 +83,51 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
           </div>
         </div>
 
-        <button
-          onClick={() => setShowShare(!showShare)}
-          style={{
-            background: "none",
-            border: `1px solid ${C.border}`,
-            backgroundColor: C.bg,
-            borderRadius: "12px",
-            padding: "6px 10px",
-            fontSize: "12px",
-            fontWeight: "700",
-            color: C.primary,
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          <Copy size={13} /> {showShare ? "Hide Text" : "Share"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {currency === "INR" && onOpenUPI && (
+            <button
+              onClick={() => onOpenUPI({ payeeName: "", payeeUpi: "", amount: "", isFromQr: false })}
+              style={{
+                background: "none",
+                border: `1px solid ${C.emerald}`,
+                backgroundColor: C.emeraldTint,
+                borderRadius: "12px",
+                padding: "6px 10px",
+                fontSize: "12px",
+                fontWeight: "700",
+                color: C.emeraldDark,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              <QrCode size={13} /> Upload QR
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowShare(!showShare)}
+            style={{
+              background: "none",
+              border: `1px solid ${C.border}`,
+              backgroundColor: C.bg,
+              borderRadius: "12px",
+              padding: "6px 10px",
+              fontSize: "12px",
+              fontWeight: "700",
+              color: C.primary,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            <Copy size={13} /> {showShare ? "Hide Text" : "Share"}
+          </button>
+        </div>
       </div>
+
 
       {/* SVG Flowchart Diagram */}
       <div style={{ width: "100%", overflowX: "auto", marginBottom: "16px", textAlign: "center" }}>
@@ -106,13 +153,13 @@ export function SettleFlowDiagram({ members, settlements, currency, onMarkPaid, 
                 {/* From Circle Avatar */}
                 <circle cx="35" cy={yPos} r="18" fill={C.primaryTint} stroke={C.border} />
                 <text x="35" y={yPos + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={C.primary} fontFamily="Plus Jakarta Sans, sans-serif">
-                  {nameOf(s.from)[0].toUpperCase()}
+                  {(nameOf(s.from)?.charAt(0) || "?").toUpperCase()}
                 </text>
 
                 {/* To Circle Avatar */}
                 <circle cx="285" cy={yPos} r="18" fill={C.emeraldTint} stroke={C.border} />
                 <text x="285" y={yPos + 4} textAnchor="middle" fontSize="11" fontWeight="800" fill={C.emerald} fontFamily="Plus Jakarta Sans, sans-serif">
-                  {nameOf(s.to)[0].toUpperCase()}
+                  {(nameOf(s.to)?.charAt(0) || "?").toUpperCase()}
                 </text>
               </g>
             );

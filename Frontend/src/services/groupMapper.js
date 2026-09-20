@@ -75,14 +75,22 @@ export function mapMembersFromApi(dto, myUserId) {
           }))
         : [];
 
-  return source.map((m) => ({
-    id: myUserId && m.userId === myUserId ? "you" : m.userId,
-    name: m.name || "Member",
-    role: m.role || "MEMBER",
-    // Server user id (additive, Task 9): lets the expense payload builders
-    // translate the viewer's "you" member id into the API's paidByUserId.
-    userId: m.userId,
-  }));
+  return source.map((m, idx) => {
+    const isViewer =
+      (myUserId && m.userId === myUserId) ||
+      (!myUserId && source.length === 1 && dto.viewerRole === "OWNER");
+    const memberId = isViewer ? "you" : m.userId || `m_${idx}_${Date.now()}`;
+    const name = typeof m.name === "string" && m.name.trim().length > 0 ? m.name.trim() : "Member";
+
+    return {
+      id: memberId,
+      name,
+      role: m.role || "MEMBER",
+      // Server user id (additive, Task 9): lets the expense payload builders
+      // translate the viewer's "you" member id into the API's paidByUserId.
+      userId: m.userId || null,
+    };
+  });
 }
 
 /** Map a full groups list; `localGroups` provides the local-expense carryover. */
@@ -106,16 +114,18 @@ export function mapGroupsFromApi(list, { localGroups = [], myUserId = null } = {
   return mapped;
 }
 
+const SEED_GROUP_IDS = new Set(["g_goa", "g_flat", "g_college"]);
+
 /**
  * Merge mapped server groups with the app's current group state.
  *
  * Precedence: server data wins. Local entries that collide with a server
  * group (same id, or same name — a pre-integration "local twin") are dropped
  * so there is never a second source of truth for the same group. Genuinely
- * local-only groups (demo data, groups the server doesn't know) survive
- * untouched, including their expenses.
+ * local-only groups (offline/unpersisted) survive untouched, while default
+ * seed demo groups are discarded so new users never inherit demo data.
  */
-export function mergeServerAndLocalGroups(mappedServer, currentGroups) {
+export function mergeServerAndLocalGroups(mappedServer, currentGroups, { filterSeedGroups = true } = {}) {
   const serverIds = new Set(mappedServer.map((g) => g.id));
   const serverNames = new Set(
     mappedServer.map((g) => String(g.name).toLowerCase())
@@ -124,7 +134,9 @@ export function mergeServerAndLocalGroups(mappedServer, currentGroups) {
     (g) =>
       !g.isServerGroup &&
       !serverIds.has(g.id) &&
-      !serverNames.has(String(g.name).toLowerCase())
+      !serverNames.has(String(g.name).toLowerCase()) &&
+      (!filterSeedGroups || !SEED_GROUP_IDS.has(g.id))
   );
   return [...mappedServer, ...localOnly];
 }
+

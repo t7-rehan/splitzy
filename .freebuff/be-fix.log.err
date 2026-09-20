@@ -68,3 +68,5 @@ Please make sure your database server is running at `127.0.0.1:54329`.
 [error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
 [error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
 [error] UNAUTHORIZED 401 POST /api/v1/groups: Invalid or expired authentication token
+[error] UNAUTHORIZED 401 GET /api/v1/groups: Missing or invalid Authorization header
+[error] CONFLICT 409 POST /api/v1/groups/62f543c7-5b27-4105-bfd8-0d0257f6bbec/leave: The group owner cannot leave. Ownership transfer is not supported yet.

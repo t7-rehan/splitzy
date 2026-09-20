@@ -10,7 +10,7 @@
  *
  * All Firebase imports are dynamic so the SDK loads only when auth is used.
  */
-import { setApiTokenProvider } from "./apiClient.js";
+import { setApiDevUserProvider, setApiTokenProvider } from "./apiClient.js";
 
 let googleProvider = null;
 
@@ -128,6 +128,11 @@ export async function getCurrentIdToken({ forceRefresh = false } = {}) {
 setApiTokenProvider(({ forceRefresh }) =>
   getCurrentIdToken({ forceRefresh })
 );
+
+setApiDevUserProvider(async () => {
+  const auth = await getFirebaseAuth();
+  return auth.currentUser?.uid || null;
+});
 
 /**
  * Subscribes to Firebase auth changes. Fires once with the current state

@@ -6,17 +6,24 @@ import { computeBalances } from "../../services/storage";
 import { ClayCard } from "../common/ClayCard";
 import { ClayButton } from "../common/ClayButton";
 
-export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, serverSync = "idle", syncErrorMessage = null, onRetrySync, theme }) {
+export function GroupListScreen({ groups = [], onSelectGroup, onCreateGroup, isPro, onShowProUpgrade, serverSync = "idle", syncErrorMessage = null, onRetrySync, theme }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all"); // 'all' | 'due' | 'paid'
 
-  const filteredGroups = groups.filter((g) => {
+  const safeGroups = Array.isArray(groups) ? groups : [];
+
+  const filteredGroups = safeGroups.filter((g) => {
+    if (!g) return false;
+
     // Search match
-    const matchesSearch = g.name.toLowerCase().includes(search.toLowerCase());
+    const name = typeof g.name === "string" ? g.name : "";
+    const matchesSearch = name.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
 
     // Filter match
-    const net = computeBalances(g.members, g.expenses);
+    const members = Array.isArray(g.members) ? g.members : [];
+    const expenses = Array.isArray(g.expenses) ? g.expenses : [];
+    const net = computeBalances(members, expenses);
     const myNet = net["you"] || 0;
 
     if (filter === "due") {
@@ -33,11 +40,11 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
       {/* Screen Title Bar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: "22px", fontWeight: "800", color: theme.text }}>
+          <h2 style={{ margin: 0, fontSize: "22px", fontWeight: "800", color: theme?.text || "#0F172A" }}>
             Groups
           </h2>
-          <div style={{ fontSize: "12px", color: theme.muted, marginTop: "2px" }}>
-            {groups.length} active group{groups.length === 1 ? "" : "s"}
+          <div style={{ fontSize: "12px", color: theme?.muted || "#64748B", marginTop: "2px" }}>
+            {safeGroups.length} active group{safeGroups.length === 1 ? "" : "s"}
           </div>
         </div>
         <ClayButton size="sm" onClick={onCreateGroup}>
@@ -121,7 +128,7 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <Crown size={18} color={theme.mode === "dark" ? theme.purple : theme.amber} />
             <div style={{ fontSize: "12px", fontWeight: "700", color: theme.mode === "dark" ? "#DDD6FE" : "#92400E" }}>
-              Free Tier: {groups.length}/5 Groups Used
+              Free Tier: {safeGroups.length}/5 Groups Used
             </div>
           </div>
           <span style={{ fontSize: "11px", fontWeight: "800", color: theme.mode === "dark" ? theme.purple : theme.amber, textTransform: "uppercase" }}>
@@ -224,10 +231,15 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
           {filteredGroups.map((group) => {
-            const net = computeBalances(group.members, group.expenses);
+            if (!group || !group.id) return null;
+            const members = Array.isArray(group.members) ? group.members : [];
+            const expenses = Array.isArray(group.expenses) ? group.expenses : [];
+            const net = computeBalances(members, expenses);
             const myNet = net["you"] || 0;
             const isOwed = myNet > 0.5;
             const isOwe = myNet < -0.5;
+            const currency = group.currency || "INR";
+            const groupName = group.name || "Untitled Group";
 
             return (
               <ClayCard
@@ -238,10 +250,10 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: "17px", fontWeight: "800", color: theme.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {group.name}
+                      {groupName}
                     </div>
                     <div style={{ fontSize: "12.5px", color: theme.muted, marginTop: "2px" }}>
-                      {group.members.length} people · {group.expenses.length} expense{group.expenses.length === 1 ? "" : "s"} · {group.currency}
+                      {members.length} people · {expenses.length} expense{expenses.length === 1 ? "" : "s"} · {currency}
                     </div>
                   </div>
 
@@ -256,9 +268,9 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
                         }}
                       >
                         {isOwed
-                          ? `+${fmtMoney(myNet, group.currency)}`
+                          ? `+${fmtMoney(myNet, currency)}`
                           : isOwe
-                          ? `-${fmtMoney(myNet, group.currency)}`
+                          ? fmtMoney(myNet, currency)
                           : "Settled ✓"}
                       </div>
                       <div style={{ fontSize: "10.5px", color: theme.muted, marginTop: "2px" }}>
@@ -271,11 +283,13 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
 
                 {/* Member Avatars */}
                 <div style={{ display: "flex", alignItems: "center", marginTop: "14px" }}>
-                  {group.members.slice(0, 5).map((m, idx) => {
+                  {members.slice(0, 5).map((m, idx) => {
                     const av = avatarStyle(idx);
+                    const memberName = m && typeof m.name === "string" && m.name.trim().length > 0 ? m.name.trim() : "Member";
+                    const initial = (memberName.charAt(0) || "M").toUpperCase();
                     return (
                       <div
-                        key={m.id}
+                        key={m?.id || idx}
                         style={{
                           width: "26px",
                           height: "26px",
@@ -291,13 +305,13 @@ export function GroupListScreen({ groups, onSelectGroup, onCreateGroup, isPro, o
                           border: `2px solid ${theme.card}`,
                         }}
                       >
-                        {m.name[0].toUpperCase()}
+                        {initial}
                       </div>
                     );
                   })}
-                  {group.members.length > 5 && (
+                  {members.length > 5 && (
                     <div style={{ fontSize: "11px", fontWeight: "700", color: theme.muted, marginLeft: "8px" }}>
-                      +{group.members.length - 5} more
+                      +{members.length - 5} more
                     </div>
                   )}
                 </div>

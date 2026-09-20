@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BottomSheet } from "../common/BottomSheet";
 import { ClayButton } from "../common/ClayButton";
 import { CURRENCIES } from "../../services/currency";
@@ -8,13 +8,25 @@ import { useTheme } from "../../theme/clayTheme";
 export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, groupCount, onShowProUpgrade }) {
   const { theme } = useTheme();
   const [name, setName] = useState("");
-  const [currency, setCurrency] = useState(userProfile.homeCurrency || "INR");
+  const [currency, setCurrency] = useState(userProfile?.homeCurrency || "INR");
   const [isRoommate, setIsRoommate] = useState(false);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Reset state whenever the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setName("");
+      setError("");
+      setIsSubmitting(false);
+      setIsRoommate(false);
+      setCurrency(userProfile?.homeCurrency || "INR");
+    }
+  }, [isOpen, userProfile?.homeCurrency]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setError("");
 
     if (!name.trim()) {
@@ -23,7 +35,7 @@ export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, 
     }
 
     // Check free limit
-    const limitCheck = checkCanCreateGroup(groupCount, userProfile.isPro);
+    const limitCheck = checkCanCreateGroup(groupCount, userProfile?.isPro);
     if (!limitCheck.allowed) {
       onClose();
       onShowProUpgrade(limitCheck.reason);
@@ -44,9 +56,11 @@ export function CreateGroupModal({ isOpen, onClose, onCreateGroup, userProfile, 
         setName("");
         setIsRoommate(false);
         onClose();
-      } else if (!error) {
+      } else {
         setError("Could not create the group. Please try again.");
       }
+    } catch (err) {
+      setError(err?.userMessage || err?.message || "Could not create the group. Please try again.");
     } finally {
       setIsSubmitting(false);
     }

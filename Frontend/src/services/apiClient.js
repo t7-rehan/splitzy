@@ -53,6 +53,7 @@ export class ApiError extends Error {
 // ---------------------------------------------------------------------------
 
 let tokenProvider = null;
+let devUserProvider = null;
 
 /**
  * Register the async token provider. Called with ({ forceRefresh }) and must
@@ -66,6 +67,10 @@ export function clearApiTokenProvider() {
   tokenProvider = null;
 }
 
+export function setApiDevUserProvider(provider) {
+  devUserProvider = typeof provider === "function" ? provider : null;
+}
+
 async function getAuthToken(forceRefresh) {
   if (!tokenProvider) return null;
   try {
@@ -74,6 +79,16 @@ async function getAuthToken(forceRefresh) {
   } catch {
     // Provider failures (e.g. Firebase unavailable) mean "unauthenticated",
     // not "crash the request chain" — the server will answer 401 if needed.
+    return null;
+  }
+}
+
+async function getDevUserId() {
+  if (!devUserProvider) return null;
+  try {
+    const userId = await devUserProvider();
+    return typeof userId === "string" && userId.length > 0 ? userId : null;
+  } catch {
     return null;
   }
 }
@@ -142,10 +157,15 @@ async function execute(method, path, body, auth, forceRefresh) {
   }
   let hadToken = false;
   if (auth) {
-    const token = await getAuthToken(forceRefresh);
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-      hadToken = true;
+    const devUserId = viteEnv.DEV ? await getDevUserId() : null;
+    if (devUserId) {
+      headers["x-dev-user-id"] = devUserId;
+    } else {
+      const token = await getAuthToken(forceRefresh);
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+        hadToken = true;
+      }
     }
   }
   const response = await fetch(apiUrl(path), {
