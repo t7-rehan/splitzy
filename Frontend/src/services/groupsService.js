@@ -82,3 +82,9 @@ export function updateGroup(groupId, { name, description, currencyCode } = {}) {
   }
   return apiPatch(`/api/v1/groups/${encodeURIComponent(groupId)}`, payload);
 }
+
+/** Delete a server-backed group after the backend verifies creator ownership. */
+export function deleteGroup(groupId) {
+  assertGroupId(groupId);
+  return apiDelete(`/api/v1/groups/${encodeURIComponent(groupId)}`);
+}

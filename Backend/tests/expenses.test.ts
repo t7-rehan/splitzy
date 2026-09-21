@@ -446,6 +446,12 @@ function makeGroupsRepository(): GroupsRepository {
       group.updatedAt = now();
       return group;
     },
+    async deleteGroup(id: string) {
+      if (!db.groups.delete(id)) throw new Error('Group not found');
+      for (const [key, membership] of db.memberships) {
+        if (membership.groupId === id) db.memberships.delete(key);
+      }
+    },
   };
 }
 

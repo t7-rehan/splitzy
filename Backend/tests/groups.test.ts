@@ -211,6 +211,12 @@ function makeGroupsRepository(): GroupsRepository {
       group.updatedAt = now();
       return group;
     },
+    async deleteGroup(id: string) {
+      if (!db.groups.delete(id)) throw new Error('Group not found');
+      for (const [key, membership] of db.memberships) {
+        if (membership.groupId === id) db.memberships.delete(key);
+      }
+    },
   };
 }
 
@@ -468,6 +474,83 @@ describe('Groups API — group creation', () => {
       assert.equal(status, 400, `expected 400 for ${JSON.stringify(bad)}`);
       assert.ok(isFailure(body));
     }
+  });
+});
+
+describe('Groups API — group deletion', () => {
+  before(async () => {
+    process.env.NODE_ENV = 'test';
+    resetEnvCacheForTests();
+    db = makeDb();
+    setUserRepositoryForTests(makeUserRepository());
+    setGroupsRepositoryForTests(makeGroupsRepository());
+    await startServer();
+  });
+
+  after(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    resetUserRepositoryForTests();
+    resetGroupsRepositoryForTests();
+  });
+
+  beforeEach(() => {
+    db = makeDb();
+    idSeq = 0;
+  });
+
+  it('deletes an owned group and all memberships', async () => {
+    const owner = makeUser({ firebaseUid: 'delete-owner' });
+    const member = makeUser({ firebaseUid: 'delete-member' });
+    const group = makeGroup({ createdById: owner.id });
+    makeMembership(group.id, owner.id, 'OWNER');
+    makeMembership(group.id, member.id, 'MEMBER');
+
+    const response = await fetch(`${baseUrl}/api/v1/groups/${group.id}`, {
+      method: 'DELETE',
+      headers: devHeaders(owner.firebaseUid),
+    });
+    assert.equal(response.status, 200);
+    const deleteBody = (await response.json()) as { data: { deleted: true } };
+    assert.deepEqual(deleteBody.data, { deleted: true });
+    assert.equal(db.groups.has(group.id), false);
+    assert.equal([...db.memberships.values()].some((m) => m.groupId === group.id), false);
+
+    const ownerGroups = await fetch(`${baseUrl}/api/v1/groups`, {
+      headers: devHeaders(owner.firebaseUid),
+    });
+    const memberGroups = await fetch(`${baseUrl}/api/v1/groups`, {
+      headers: devHeaders(member.firebaseUid),
+    });
+    const ownerBody = (await ownerGroups.json()) as { data: unknown[] };
+    const memberBody = (await memberGroups.json()) as { data: unknown[] };
+    assert.deepEqual(ownerBody.data, []);
+    assert.deepEqual(memberBody.data, []);
+  });
+
+  it('requires authentication, ownership, and an existing group', async () => {
+    const owner = makeUser({ firebaseUid: 'delete-owner-errors' });
+    const member = makeUser({ firebaseUid: 'delete-member-errors' });
+    const group = makeGroup({ createdById: owner.id });
+    makeMembership(group.id, owner.id, 'OWNER');
+    makeMembership(group.id, member.id, 'MEMBER');
+
+    const unauthenticated = await fetch(`${baseUrl}/api/v1/groups/${group.id}`, {
+      method: 'DELETE',
+    });
+    assert.equal(unauthenticated.status, 401);
+
+    const forbidden = await fetch(`${baseUrl}/api/v1/groups/${group.id}`, {
+      method: 'DELETE',
+      headers: devHeaders(member.firebaseUid),
+    });
+    assert.equal(forbidden.status, 403);
+
+    const missing = await fetch(`${baseUrl}/api/v1/groups/nonexistent-group`, {
+      method: 'DELETE',
+      headers: devHeaders(owner.firebaseUid),
+    });
+    assert.equal(missing.status, 404);
   });
 });
 

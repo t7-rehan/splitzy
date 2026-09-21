@@ -3,6 +3,7 @@ import {
   addMember,
   changeMemberRole,
   createGroup,
+  deleteGroup,
   getGroupDetails,
   leaveGroup,
   listMyGroups,
@@ -93,6 +94,27 @@ export async function updateGroupHandler(
       req.actor!.user.id,
     );
     const body: ApiSuccessBody<GroupDetails> = { success: true, data: group };
+    res.status(200).json(body);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteGroupHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    await deleteGroup(
+      param(req, 'groupId'),
+      req.actor!.user.id,
+      req.groupMembership!.role,
+    );
+    const body: ApiSuccessBody<{ deleted: true }> = {
+      success: true,
+      data: { deleted: true },
+    };
     res.status(200).json(body);
   } catch (error) {
     next(error);

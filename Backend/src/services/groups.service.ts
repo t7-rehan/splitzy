@@ -89,6 +89,7 @@ export interface GroupsRepository {
     role: GroupRole,
   ): Promise<GroupMember>;
   updateGroup(id: string, data: GroupUpdateData): Promise<Group>;
+  deleteGroup(id: string): Promise<void>;
 }
 
 const globalForGroupsRepo = globalThis as unknown as {
@@ -186,6 +187,14 @@ function createPrismaGroupsRepository(): GroupsRepository {
     },
     async updateGroup(id, data) {
       return prisma.group.update({ where: { id }, data });
+    },
+    async deleteGroup(id) {
+      // Group-owned relations use ON DELETE CASCADE in Prisma's schema:
+      // memberships, expenses, expense splits/items, settlements, and
+      // recurring expenses are removed atomically with the group.
+      await prisma.$transaction(async (tx) => {
+        await tx.group.delete({ where: { id } });
+      });
     },
   };
 }
@@ -520,6 +529,25 @@ export async function updateGroup(
   const group = await repo.updateGroup(groupId, patch);
   const members = await repo.listMembers(groupId);
   return toGroupDetails(group, members, viewerRole, viewerId);
+}
+
+/** Delete a group and all group-owned financial records (OWNER only). */
+export async function deleteGroup(
+  groupId: string,
+  actorUserId: string,
+  actorRole: GroupRole,
+): Promise<void> {
+  const repo = groupsRepository();
+  const group = await repo.findGroupById(groupId);
+  if (!group) {
+    throw new AppError(ErrorCodes.NOT_FOUND, { message: 'Group not found' });
+  }
+  if (actorRole !== 'OWNER' || group.createdById !== actorUserId) {
+    throw new AppError(ErrorCodes.FORBIDDEN, {
+      message: 'Only the group creator can delete this group',
+    });
+  }
+  await repo.deleteGroup(groupId);
 }
 
 /**

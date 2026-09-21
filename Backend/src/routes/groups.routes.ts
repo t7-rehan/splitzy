@@ -3,6 +3,7 @@ import {
   addMemberHandler,
   changeRoleHandler,
   createGroupHandler,
+  deleteGroupHandler,
   getGroupHandler,
   leaveGroupHandler,
   listGroupsHandler,
@@ -71,6 +72,15 @@ groupsRouter.patch(
   loadGroupMembership,
   requireRole('OWNER', 'ADMIN'),
   updateGroupHandler,
+);
+
+groupsRouter.delete(
+  '/:groupId',
+  requireAuth,
+  requireActor,
+  loadGroupMembership,
+  requireRole('OWNER'),
+  deleteGroupHandler,
 );
 
 groupsRouter.post(

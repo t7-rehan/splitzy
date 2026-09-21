@@ -24,6 +24,7 @@ import {
   fetchMyGroups,
   fetchGroupDetails,
   createGroup as apiCreateGroup,
+  deleteGroup as apiDeleteGroup,
   searchUsersByUsername,
   addGroupMember,
   removeGroupMember,
@@ -649,19 +650,22 @@ export default function App() {
     showToast({ message: `${member.name} removed from the group`, type: "info" });
   };
 
-  const handleDeleteGroup = (groupId) => {
+  const handleDeleteGroup = async (groupId) => {
     const target = groups.find((g) => g.id === groupId);
-    // The backend has no group-deletion endpoint (by design so far) — never
-    // pretend a server-backed group was deleted.
     if (target?.isServerGroup) {
-      showToast({
-        message: "Server-backed groups can't be deleted from the app yet.",
-        type: "info",
-      });
-      return;
+      try {
+        await apiDeleteGroup(groupId);
+      } catch (error) {
+        showToast({
+          message: error?.userMessage || "Could not delete the group. Please try again.",
+          type: "error",
+        });
+        return;
+      }
     }
-    setGroups(groups.filter((g) => g.id !== groupId));
+    setGroups((current) => current.filter((g) => g.id !== groupId));
     if (selectedGroupId === groupId) setSelectedGroupId(null);
+    setActiveTab("groups");
     showToast({ message: `Deleted group "${target?.name || "Group"}"`, type: "info" });
   };
 
