@@ -47,6 +47,7 @@ export interface UserRepository {
       birthdate?: Date | string | null;
       avatarId?: string | null;
       currencyCode?: string;
+      theme?: string;
       timezone?: string;
       upiId?: string | null;
       upiQrDataUrl?: string | null;
@@ -219,6 +220,7 @@ export async function updateCurrentUserProfile(
   const nextBirthdate = 'birthdate' in patch ? normalizeBirthdate(patch.birthdate) : undefined;
   const nextAvatarId = typeof patch.avatarId === 'string' ? patch.avatarId : undefined;
   const nextCurrencyCode = typeof patch.currencyCode === 'string' ? patch.currencyCode : undefined;
+  const nextTheme = typeof patch.theme === 'string' ? patch.theme : undefined;
   const nextTimezone = typeof patch.timezone === 'string' ? patch.timezone : undefined;
   const nextUpiId = typeof patch.upiId === 'string' ? patch.upiId.trim() || null : undefined;
   const nextUpiQrDataUrl = typeof patch.upiQrDataUrl === 'string' ? patch.upiQrDataUrl.trim() || null : undefined;
@@ -229,6 +231,7 @@ export async function updateCurrentUserProfile(
   if (nextBirthdate !== undefined) data.birthdate = nextBirthdate;
   if (nextAvatarId !== undefined) data.avatarId = nextAvatarId;
   if (nextCurrencyCode !== undefined) data.currencyCode = nextCurrencyCode;
+  if (nextTheme !== undefined) data.theme = nextTheme;
   if (nextTimezone !== undefined) data.timezone = nextTimezone;
   if (nextUpiId !== undefined) data.upiId = nextUpiId;
   if (nextUpiQrDataUrl !== undefined) data.upiQrDataUrl = nextUpiQrDataUrl;
@@ -250,6 +253,7 @@ export async function updateCurrentUserProfile(
       upiQrDataUrl?: string | null;
       avatarId?: string | null;
       currencyCode?: string;
+      theme?: string;
       timezone?: string;
       },
     });
@@ -284,6 +288,7 @@ export function toPublicUser(user: User): {
   profileCompleted: boolean;
   upiId: string | null;
   upiQrDataUrl: string | null;
+  theme: string;
 } {
   return {
     id: user.id,
@@ -295,5 +300,6 @@ export function toPublicUser(user: User): {
     profileCompleted: Boolean(user.name && user.username && user.birthdate),
     upiId: user.upiId ?? null,
     upiQrDataUrl: user.upiQrDataUrl ?? null,
+    theme: user.theme,
   };
 }

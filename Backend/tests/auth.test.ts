@@ -83,6 +83,7 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
         birthdate: null,
         avatarId: null,
         currencyCode: 'INR',
+        theme: 'light',
         timezone: 'UTC',
         upiId: null,
         upiQrDataUrl: null,
@@ -105,6 +106,7 @@ function makeFakeUserRepository(): UserRepository & { counts: Map<string, number
       if (data.birthdate !== undefined) row.birthdate = data.birthdate as Date | null;
       if (data.upiId !== undefined) row.upiId = data.upiId as string | null;
       if (data.upiQrDataUrl !== undefined) row.upiQrDataUrl = data.upiQrDataUrl as string | null;
+      if (data.theme !== undefined) row.theme = data.theme;
       row.updatedAt = now();
       return row;
     },
@@ -308,6 +310,7 @@ describe('Authentication foundation (Task 4)', () => {
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,
+      theme: 'light',
       upiId: null,
       upiQrDataUrl: null,
     });
@@ -318,6 +321,7 @@ describe('Authentication foundation (Task 4)', () => {
       'id',
       'photoUrl',
       'profileCompleted',
+      'theme',
       'upiId',
       'upiQrDataUrl',
       'username',
@@ -339,6 +343,7 @@ describe('Authentication foundation (Task 4)', () => {
       birthdate: null,
       avatarId: null,
       currencyCode: 'INR',
+      theme: 'light',
       timezone: 'UTC',
       upiId: null,
       upiQrDataUrl: null,
@@ -352,6 +357,7 @@ describe('Authentication foundation (Task 4)', () => {
       'id',
       'photoUrl',
       'profileCompleted',
+      'theme',
       'upiId',
       'upiQrDataUrl',
       'username',

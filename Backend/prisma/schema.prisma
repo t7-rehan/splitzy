@@ -108,6 +108,8 @@ model User {
   avatarId     String?
   /// Preferred display currency (ISO 4217, e.g. INR).
   currencyCode String    @default("INR") @db.Char(3)
+  /// Preferred application theme.
+  theme        String    @default("light")
   /// IANA timezone for date grouping (calendar, monthly insights).
   timezone     String    @default("UTC")
   /// Saved UPI ID for settlement payments.

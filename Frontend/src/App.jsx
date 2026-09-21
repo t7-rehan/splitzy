@@ -250,7 +250,7 @@ export default function App() {
           profileCompleted: Boolean(user.profileCompleted),
           photoUrl: user.photoUrl || null,
           homeCurrency: "INR",
-          theme: profile?.theme || "light",
+          theme: user.theme || profile?.theme || "light",
           isPro: Boolean(profile?.isPro),
           avatarId: profile?.avatarId || "avatar_cool",
           upiId: user.upiId || null,
@@ -425,7 +425,12 @@ export default function App() {
 
   const handleAuthenticate = (authData) => {
     setAuthEmail(authData.email);
-    const sessionData = { email: authData.email, authType: authData.authType, loggedInAt: new Date().toISOString() };
+    const sessionData = {
+      uid: authData.uid,
+      email: authData.email,
+      authType: authData.authType,
+      loggedInAt: new Date().toISOString(),
+    };
 
     // Check if existing profile is already completed
     if (profile && profile.profileCompleted) {

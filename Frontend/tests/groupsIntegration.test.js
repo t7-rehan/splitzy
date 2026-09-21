@@ -97,6 +97,7 @@ describe("auth bootstrap", () => {
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,
+      theme: "light",
       upiId: null,
       upiQrDataUrl: null,
       secretField: "nope",
@@ -109,6 +110,7 @@ describe("auth bootstrap", () => {
       photoUrl: null,
       birthdate: null,
       profileCompleted: false,
+      theme: "light",
       upiId: null,
       upiQrDataUrl: null,
     });

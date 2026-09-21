@@ -40,6 +40,7 @@ export function AuthScreen({ onAuthenticate, theme }) {
       const user = await signInWithGoogle();
       if (user && !user.redirecting) {
         onAuthenticate({
+          uid: user.uid,
           email: user.email,
           authType: "google",
           nameFromGoogle: user.displayName,

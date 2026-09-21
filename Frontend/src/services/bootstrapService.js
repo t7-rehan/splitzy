@@ -26,6 +26,7 @@ export function mapUserFromApi(payload) {
     photoUrl: payload.photoUrl ?? null,
     birthdate: payload.birthdate ?? null,
     profileCompleted: Boolean(payload.profileCompleted),
+    theme: payload.theme || "light",
     upiId: payload.upiId ?? null,
     upiQrDataUrl: payload.upiQrDataUrl ?? null,
   };
