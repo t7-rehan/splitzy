@@ -21,6 +21,7 @@ const viteEnv = import.meta.env || {};
 
 // Local-development default matches the backend's default PORT (5000).
 const DEFAULT_BASE_URL = "http://localhost:5000";
+const REQUEST_TIMEOUT_MS = 15000;
 
 export const API_BASE_URL = String(
   viteEnv.VITE_API_BASE_URL || DEFAULT_BASE_URL
@@ -168,12 +169,19 @@ async function execute(method, path, body, auth, forceRefresh) {
       }
     }
   }
-  const response = await fetch(apiUrl(path), {
-    method,
-    headers,
-    ...(payload === undefined ? {} : { body: payload }),
-  });
-  return { response, hadToken };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(apiUrl(path), {
+      method,
+      headers,
+      signal: controller.signal,
+      ...(payload === undefined ? {} : { body: payload }),
+    });
+    return { response, hadToken };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

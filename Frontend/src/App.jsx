@@ -291,6 +291,24 @@ export default function App() {
         setGroupsSyncState("ready");
       } catch (error) {
         if (cancelled) return;
+        // /auth/me is the gate for the profile screen. Always resolve that
+        // gate on failure so a network, CORS, or malformed API response can
+        // never leave the app on an infinite loading screen.
+        setUserProfileReady(true);
+        if (error?.status === 401) {
+          showToast({
+            message: "Your session expired. Please sign in again.",
+            type: "error",
+          });
+          await firebaseSignOut();
+          clearAuthSession();
+          setAuthSession(null);
+          setBackendUser(null);
+          setGroups([]);
+          setProfile(null);
+          setSelectedGroupId(null);
+          return;
+        }
         setGroupsSyncState("error");
         setSyncErrorMessage(
           error?.userMessage || "Couldn't sync your groups from the server."
@@ -883,14 +901,18 @@ export default function App() {
   }
 
   // 2. If authenticated but profile is not completed: Show Create Your Profile flow
-  if (authSession && backendUser && !backendUser.profileCompleted) {
+  if (
+    authSession &&
+    ((!backendUser && !profile?.profileCompleted) ||
+      (backendUser && !backendUser.profileCompleted))
+  ) {
     return (
       <ThemeProvider themeMode={themeMode} setThemeMode={handleThemeChange}>
         <MobileContainer>
           <style>{GLOBAL_STYLES(themeMode === "dark")}</style>
           <OnboardingFlow
             initialEmail={authSession.email}
-            initialUsername={backendUser.username || ""}
+            initialUsername={backendUser?.username || profile?.username || ""}
             onComplete={handleCompleteProfile}
             theme={theme}
             onThemeChange={handleThemeChange}

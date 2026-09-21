@@ -128,6 +128,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     birthdate: overrides.birthdate ?? null,
     avatarId: overrides.avatarId ?? 'avatar_cool',
     currencyCode: overrides.currencyCode ?? 'INR',
+    theme: overrides.theme ?? 'light',
     timezone: overrides.timezone ?? 'UTC',
     upiId: overrides.upiId ?? null,
     upiQrDataUrl: overrides.upiQrDataUrl ?? null,

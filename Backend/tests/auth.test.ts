@@ -39,9 +39,11 @@ interface MeBody {
     id: string;
     email: string;
     displayName: string;
+    username: string | null;
     photoUrl: string | null;
     birthdate: string | null;
     profileCompleted: boolean;
+    theme: string;
     upiId: string | null;
     upiQrDataUrl: string | null;
   };
@@ -382,7 +384,10 @@ describe('Authentication foundation (Task 4)', () => {
       headers: { 'x-dev-user-id': 'uid-other' },
     });
     assert.equal(lookup.status, 200);
-    assert.deepEqual((await lookup.json()).data, {
+    const lookupBody = (await lookup.json()) as {
+      data: { id: string; username: string; name: string };
+    };
+    assert.deepEqual(lookupBody.data, {
       id: updatedBody.data.id,
       username: 'sarthak',
       name: 'Splitzy User',
